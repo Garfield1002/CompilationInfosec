@@ -45,20 +45,52 @@ let empty_nfa =
 
 (* Concaténation de NFAs.  *)
 let cat_nfa n1 n2 =
-   (* TODO *)
-   empty_nfa
+  let nfa_step q =
+    let l = n1.nfa_step q @ n2.nfa_step q in
+
+    (* If the state is a final state of n1 add an ε transition to all initial states of n2 *)
+    let ll =  if List.mem q (List.map fst n1.nfa_final)
+              then List.map (fun q' -> (None, q')) n2.nfa_initial
+              else []
+            in
+    l@ll
+  in
+  {
+    nfa_states = n1.nfa_states @ n2.nfa_states;
+    nfa_initial = n1.nfa_initial;
+    nfa_final = n2.nfa_final;
+    nfa_step = nfa_step;
+  }
+
 
 (* Alternatives de NFAs *)
 let alt_nfa n1 n2 =
-   (* TODO *)
-   empty_nfa
+  {
+    nfa_states = n1.nfa_states @ n2.nfa_states;
+    nfa_initial = n1.nfa_initial @ n2.nfa_states;
+    nfa_final = n1.nfa_final @ n2.nfa_final;
+    nfa_step = fun q -> n1.nfa_step q @ n2.nfa_step q;
+  }
 
 (* Répétition de NFAs *)
 (* t est de type [string -> token option] *)
 let star_nfa n t =
-   (* TODO *)
-   empty_nfa
+  let nfa_step q =
+    let l = n.nfa_step q in
 
+    (* If the state is a final state of n add an ε transition to all initial states of n *)
+    let ll =  if List.mem q (List.map fst n.nfa_final)
+              then List.map (fun q' -> (None, q')) n.nfa_initial
+              else []
+            in
+    l@ll
+  in
+  {
+    nfa_states = n.nfa_states;
+    nfa_initial = List.map fst n.nfa_final;
+    nfa_final = List.map (fun (q, _) -> (q, t)) n.nfa_final;
+    nfa_step = nfa_step;
+  }
 
 (* [nfa_of_regexp r freshstate t] construit un NFA qui reconnaît le même langage
    que l'expression régulière [r].
@@ -77,8 +109,17 @@ let rec nfa_of_regexp r freshstate t =
                 nfa_final = [freshstate + 1, t];
                 nfa_step = fun q -> if q = freshstate then [(Some c, freshstate + 1)] else []
               }, freshstate + 2
-   (* TODO *)
-   | _ -> empty_nfa, freshstate
+  | Cat (r1, r2) -> 
+    let nfa_1, freshstate_1 = nfa_of_regexp r1 freshstate   t in
+    let nfa_2, freshstate_2 = nfa_of_regexp r2 freshstate_1 t in
+    cat_nfa nfa_1 nfa_2, freshstate_2
+  | Alt (r1, r2) -> 
+    let nfa_1, freshstate_1 = nfa_of_regexp r1 freshstate   t in
+    let nfa_2, freshstate_2 = nfa_of_regexp r2 freshstate_1 t in
+    alt_nfa nfa_1 nfa_2, freshstate_2
+  | Star r1      -> 
+    let nfa_1, freshstate_1 = nfa_of_regexp r1 freshstate   t in
+    star_nfa nfa_1 t, freshstate_1
 
 (* Deterministic Finite Automaton (DFA) *)
 

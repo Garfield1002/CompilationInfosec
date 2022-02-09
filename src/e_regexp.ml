@@ -67,37 +67,37 @@ let keyword_regexp s = str_regexp (char_list_of_string s)
 let list_regexp : (regexp * (string -> token option)) list =
   [
     (keyword_regexp "while",    fun s -> Some (SYM_WHILE));
-    (keyword_regexp "int", fun s -> Some (SYM_INT));
+    (keyword_regexp "int",      fun s -> Some (SYM_INT));
     (* begin TODO *)
-    (Eps,       fun s -> Some (SYM_VOID));
-    (Eps,       fun s -> Some (SYM_CHAR));
-    (Eps,       fun s -> Some (SYM_IF));
-    (Eps,       fun s -> Some (SYM_ELSE));
-    (Eps,       fun s -> Some (SYM_RETURN));
-    (Eps,       fun s -> Some (SYM_PRINT));
-    (Eps,       fun s -> Some (SYM_STRUCT));
-    (Eps,       fun s -> Some (SYM_POINT));
-    (Eps,       fun s -> Some (SYM_PLUS));
-    (Eps,       fun s -> Some (SYM_MINUS));
-    (Eps,       fun s -> Some (SYM_ASTERISK));
-    (Eps,       fun s -> Some (SYM_DIV));
-    (Eps,       fun s -> Some (SYM_MOD));
-    (Eps,       fun s -> Some (SYM_LBRACE));
-    (Eps,       fun s -> Some (SYM_RBRACE));
-    (Eps,       fun s -> Some (SYM_LBRACKET));
-    (Eps,       fun s -> Some (SYM_RBRACKET));
-    (Eps,       fun s -> Some (SYM_LPARENTHESIS));
-    (Eps,       fun s -> Some (SYM_RPARENTHESIS));
-    (Eps,       fun s -> Some (SYM_SEMICOLON));
-    (Eps,       fun s -> Some (SYM_COMMA));
-    (Eps,       fun s -> Some (SYM_ASSIGN));
-    (Eps,       fun s -> Some (SYM_EQUALITY));
-    (Eps,       fun s -> Some (SYM_NOTEQ));
-    (Eps,       fun s -> Some (SYM_LT));
-    (Eps,       fun s -> Some (SYM_GT));
-    (Eps,       fun s -> Some (SYM_LEQ));
-    (Eps,       fun s -> Some (SYM_GEQ));
-    (Eps,       fun s -> Some (SYM_IDENTIFIER s));
+    (keyword_regexp "void",      fun s -> Some (SYM_VOID));
+    (keyword_regexp "char",      fun s -> Some (SYM_CHAR));
+    (keyword_regexp "if",        fun s -> Some (SYM_IF));
+    (keyword_regexp "else",      fun s -> Some (SYM_ELSE));
+    (keyword_regexp "return",    fun s -> Some (SYM_RETURN));
+    (keyword_regexp "print",     fun s -> Some (SYM_PRINT));
+    (keyword_regexp "struct",    fun s -> Some (SYM_STRUCT));
+    (keyword_regexp ".",       fun s -> Some (SYM_POINT));
+    (keyword_regexp "+",       fun s -> Some (SYM_PLUS));
+    (keyword_regexp "-",         fun s -> Some (SYM_MINUS));
+    (keyword_regexp "*",       fun s -> Some (SYM_ASTERISK));
+    (keyword_regexp "/",         fun s -> Some (SYM_DIV));
+    (keyword_regexp "%",         fun s -> Some (SYM_MOD));
+    (keyword_regexp "{",       fun s -> Some (SYM_LBRACE));
+    (keyword_regexp "}",       fun s -> Some (SYM_RBRACE));
+    (keyword_regexp "[",       fun s -> Some (SYM_LBRACKET));
+    (keyword_regexp "]",       fun s -> Some (SYM_RBRACKET));
+    (keyword_regexp "(",       fun s -> Some (SYM_LPARENTHESIS));
+    (keyword_regexp ")",       fun s -> Some (SYM_RPARENTHESIS));
+    (keyword_regexp ";",         fun s -> Some (SYM_SEMICOLON));
+    (keyword_regexp ",",         fun s -> Some (SYM_COMMA));
+    (keyword_regexp "=",         fun s -> Some (SYM_ASSIGN));
+    (keyword_regexp "==",        fun s -> Some (SYM_EQUALITY));
+    (keyword_regexp "!=",        fun s -> Some (SYM_NOTEQ));
+    (keyword_regexp "<",         fun s -> Some (SYM_LT));
+    (keyword_regexp ">",         fun s -> Some (SYM_GT));
+    (keyword_regexp "<=",        fun s -> Some (SYM_LEQ));
+    (keyword_regexp ">=",        fun s -> Some (SYM_GEQ));
+    (identifier_material,       fun s -> Some (SYM_IDENTIFIER s));
     (* end TODO *)
     (Cat(keyword_regexp "//",
          Cat(Star (char_range (List.filter (fun c -> c <> '\n') alphabet)),
