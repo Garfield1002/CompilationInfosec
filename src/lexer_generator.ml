@@ -382,13 +382,36 @@ type lexer_result =
 
 *)
 
-let tokenize_one (d : dfa) (w: char list) : lexer_result * char list =
+(* let tokenize_one (d : dfa) (w: char list) : lexer_result * char list =
   let rec recognize (q: dfa_state) (w: char list)
     (current_token: char list) (last_accepted: lexer_result * char list)
     : lexer_result * char list =
     match w with
     | []    -> last_accepted
     | h::t  -> recognize (d.dfa_step h) t (h::current_token) last_accepted
+  in
+  recognize d.dfa_initial w [] (LRerror, w) *)
+
+
+let tokenize_one (d : dfa) (w: char list) : lexer_result * char list =
+  let rec recognize (q: dfa_state) (w: char list)
+      (current_token: char list) (last_accepted: lexer_result * char list)
+    : lexer_result * char list =
+
+    match w with
+    | [] -> if fst last_accepted = LRerror
+              then (LRtoken SYM_EOF, [])
+            else
+              last_accepted
+    | wh::wt -> match (d.dfa_step q wh) with
+                | None -> last_accepted
+                | Some q' -> let new_token = current_token@[wh] in
+                              let try_final = List.filter (fun x -> fst x = q') d.dfa_final in
+                              match try_final with
+                              | [] -> recognize q' wt new_token last_accepted
+                              | h::t -> match (snd h) (string_of_char_list new_token) with
+                                        | None -> recognize q' wt new_token (LRskip, wt)
+                                        | Some token -> recognize q' wt new_token (LRtoken token, wt)
   in
   recognize d.dfa_initial w [] (LRerror, w)
 

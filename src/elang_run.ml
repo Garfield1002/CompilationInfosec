@@ -5,6 +5,7 @@ open Prog
 open Utils
 open Builtins
 open Utils
+open Int
 
 let binop_bool_to_int f x y = if f x y then 1 else 0
 
@@ -12,17 +13,46 @@ let binop_bool_to_int f x y = if f x y then 1 else 0
    et [y]. *)
 let eval_binop (b: binop) : int -> int -> int =
   match b with
-   | _ -> fun x y -> 0
+   | Eadd -> (+)
+   | Emul -> ( * )
+   | Emod -> (mod)
+   | Exor -> (lxor)
+   | Esub -> (-)
+   | Ediv -> (/)
+   | Eclt -> binop_bool_to_int (<)
+   | Ecle -> binop_bool_to_int (<=)
+   | Ecgt -> binop_bool_to_int (>)
+   | Ecge -> binop_bool_to_int (>=)
+   | Eceq -> binop_bool_to_int (=)
+   | Ecne -> binop_bool_to_int (<>)
 
 (* [eval_unop u x] évalue l'opération unaire [u] sur l'argument [x]. *)
 let eval_unop (u: unop) : int -> int =
   match u with
-   | _ -> fun x -> 0
+   | Eneg   -> Int.neg
 
 (* [eval_eexpr st e] évalue l'expression [e] dans l'état [st]. Renvoie une
    erreur si besoin. *)
 let rec eval_eexpr st (e : expr) : int res =
-   Error "eval_eexpr not implemented yet."
+   match e with
+   | Ebinop (binop, i, j) ->
+      eval_eexpr st i >>= fun i ->
+      eval_eexpr st j >>= fun j ->
+      begin
+         match (binop, i, j) with
+         | (Ediv, _, 0) -> Error "Error division by 0"
+         | (Emod, _, 0) -> Error "Error modulos by 0"
+         | _ -> OK (eval_binop binop i j)
+      end
+   | Eunop (unop, i) ->
+      eval_eexpr st i >>= fun i ->
+      OK (eval_unop unop i)
+   | Eint i -> OK i
+   | Evar s ->
+      let v = Hashtbl.find_option st.env s in
+      if Option.is_none v then
+         Error (Printf.sprintf "Unknown variable %s" s)
+      else OK (Option.get v)
 
 (* [eval_einstr oc st ins] évalue l'instrution [ins] en partant de l'état [st].
 
@@ -38,7 +68,40 @@ let rec eval_eexpr st (e : expr) : int res =
    - [st'] est l'état mis à jour. *)
 let rec eval_einstr oc (st: int state) (ins: instr) :
   (int option * int state) res =
-   Error "eval_einstr not implemented yet."
+  match ins with
+   | Iassign (s, e) ->
+      eval_eexpr st e >>= fun e ->
+      Hashtbl.replace st.env s e;
+      OK (None, st)
+   | Iif (e, i1, i2) ->
+      eval_eexpr st e >>= fun e ->
+      if e <> 0
+      then eval_einstr oc st i1
+      else eval_einstr oc st i2
+   | Iwhile (e, i) ->
+      eval_eexpr st e >>= fun e ->
+      if e <> 0
+      then
+         eval_einstr oc st i >>= fun (ret, s) ->
+         if Option.is_none ret then
+            eval_einstr oc s ins
+         else
+            OK (ret, s)
+      else OK (None, st)
+   | Ireturn e ->
+      eval_eexpr st e >>= fun e ->
+      OK (Some e, st)
+   | Iprint e ->
+      eval_eexpr st e >>= fun e ->
+      Format.fprintf oc "%d\n" e;
+      OK (None, st)
+   | Iblock []     -> OK (None, st)
+   | Iblock (h::t) ->
+      eval_einstr oc st h >>= fun (ret, s) ->
+         if Option.is_none ret then
+            eval_einstr oc s (Iblock t)
+         else
+            OK (ret, s)
 
 (* [eval_efun oc st f fname vargs] évalue la fonction [f] (dont le nom est
    [fname]) en partant de l'état [st], avec les arguments [vargs].
@@ -88,5 +151,6 @@ let eval_eprog oc (ep: eprog) (memsize: int) (params: int list)
   (* ne garde que le nombre nécessaire de paramètres pour la fonction "main". *)
   let n = List.length f.funargs in
   let params = take n params in
+  let _ = List.map (uncurry (Hashtbl.replace st.env)) (combine f.funargs params) in
   eval_efun oc st f "main" params >>= fun (v, st) ->
   OK v

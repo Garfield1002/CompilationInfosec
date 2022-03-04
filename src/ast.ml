@@ -26,12 +26,12 @@ open BatPrintf
 type tag = Tassign | Tif | Twhile | Tblock | Treturn | Tprint
          | Tint
          | Tadd | Tmul | Tdiv | Tmod | Txor | Tsub
-         | Tclt | Tcgt | Tcle | Tcge | Tceq | Tne
-         | Tneg
+         | Tclt | Tcgt | Tcle | Tcge | Tceq | Tcne | Tne
+         | Telse | Tneg
          | Tlistglobdef
          | Tfundef | Tfunname | Tfunargs | Tfunbody
          | Tassignvar
-         | Targ 
+         | Targ
 
 type tree = | Node of tag * tree list
             | StringLeaf of string
@@ -65,8 +65,7 @@ let string_of_tag = function
   | Tcle -> "Tcle"
   | Tcge -> "Tcge"
   | Tceq -> "Tceq"
-  | Tne -> "Tne"
-  | Tneg -> "Tneg"
+  | Tcne -> "Tcne"
   | Tlistglobdef -> "Tlistglobdef"
   | Tfundef -> "Tfundef"
   | Tfunname -> "Tfunname"
@@ -74,7 +73,9 @@ let string_of_tag = function
   | Tfunbody -> "Tfunbody"
   | Tassignvar -> "Tassignvar"
   | Targ -> "Targ"
-
+  | Telse -> "Telse"
+  | Tneg -> "Tneg"
+  | Tne -> "Tneg"
 
 (* Écrit un fichier .dot qui correspond à un AST *)
 let rec draw_ast a next =
@@ -116,3 +117,9 @@ let rec string_of_ast a =
   | IntLeaf i -> Format.sprintf "%d" i
   | CharLeaf i -> Format.sprintf "%c" i
   | NullLeaf -> "null"
+
+
+let rec resolve_associativity (term:tree) (other: tree list) : tree =
+  match other with
+  | Node (tag, l)::t  -> resolve_associativity (Node (tag, term::l)) t
+  | _    ->  term
