@@ -19,31 +19,53 @@ open BatPrintf
 
    - peut être demandée à votre encadrant de TP favori (ou celui présent en
    séance, à défaut)
-
-
 *)
 
-type tag = Tassign | Tif | Twhile | Tblock | Treturn | Tprint
-         | Tint
-         | Tadd | Tmul | Tdiv | Tmod | Txor | Tsub
-         | Tclt | Tcgt | Tcle | Tcge | Tceq | Tcne | Tne
-         | Telse | Tneg
-         | Tlistglobdef
-         | Tfundef | Tfunname | Tfunargs | Tfunbody
-         | Tassignvar
-         | Targ
+type tag =
+  | Tassign
+  | Tif
+  | Twhile
+  | Tblock
+  | Treturn
+  | Tprint
+  | Tint
+  | Tadd
+  | Tmul
+  | Tdiv
+  | Tmod
+  | Txor
+  | Tsub
+  | Tclt
+  | Tcgt
+  | Tcle
+  | Tcge
+  | Tceq
+  | Tcne
+  | Tne
+  | Telse
+  | Tneg
+  | Tlistglobdef
+  | Tfundef
+  | Tfunname
+  | Tfunargs
+  | Tfunbody
+  | Tassignvar
+  | Targ
+  | Targs
+  | Tcall
 
-type tree = | Node of tag * tree list
-            | StringLeaf of string
-            | IntLeaf of int
-            | NullLeaf
-            | CharLeaf of char
+type tree =
+  | Node of tag * tree list
+  | StringLeaf of string
+  | IntLeaf of int
+  | NullLeaf
+  | CharLeaf of char
 
 let string_of_stringleaf = function
   | StringLeaf s -> s
   | _ -> failwith "string_of_stringleaf called on non-stringleaf nodes."
 
-type astfun = (string list * tree)
+type astfun = string list * tree
 type ast = (string * astfun) list
 
 let string_of_tag = function
@@ -76,50 +98,50 @@ let string_of_tag = function
   | Telse -> "Telse"
   | Tneg -> "Tneg"
   | Tne -> "Tneg"
+  | Tcall -> "Tcall"
+  | Targs -> "Targs"
 
 (* Écrit un fichier .dot qui correspond à un AST *)
 let rec draw_ast a next =
   match a with
   | Node (t, l) ->
-
-    let (code, nodes, next) =
-      List.fold_left (fun (code, nodes, nextnode) n ->
-          let (node, next, ncode) = draw_ast n nextnode in
-          (code @ ncode, node::nodes, next)
-        ) ([], [], next)
-        l in
-    (next, next+1, code @ [
-         Format.sprintf "n%d [label=\"%s\"]\n" next (string_of_tag t)
-       ] @ List.map (fun n ->
-        Format.sprintf "n%d -> n%d\n" next n
-      )nodes)
-
+      let code, nodes, next =
+        List.fold_left
+          (fun (code, nodes, nextnode) n ->
+            let node, next, ncode = draw_ast n nextnode in
+            (code @ ncode, node :: nodes, next))
+          ([], [], next) l
+      in
+      ( next,
+        next + 1,
+        code
+        @ [ Format.sprintf "n%d [label=\"%s\"]\n" next (string_of_tag t) ]
+        @ List.map (fun n -> Format.sprintf "n%d -> n%d\n" next n) nodes )
   | StringLeaf s ->
-    (next, next+1, [         Format.sprintf "n%d [label=\"%s\"]\n" next s])
+      (next, next + 1, [ Format.sprintf "n%d [label=\"%s\"]\n" next s ])
   | IntLeaf i ->
-    (next, next+1, [         Format.sprintf "n%d [label=\"%d\"]\n" next i])
+      (next, next + 1, [ Format.sprintf "n%d [label=\"%d\"]\n" next i ])
   | NullLeaf ->
-    (next, next+1, [         Format.sprintf "n%d [label=\"null\"]\n" next])
+      (next, next + 1, [ Format.sprintf "n%d [label=\"null\"]\n" next ])
   | CharLeaf i ->
-    (next, next+1, [         Format.sprintf "n%d [label=\"%c\"]\n" next i])
+      (next, next + 1, [ Format.sprintf "n%d [label=\"%c\"]\n" next i ])
 
 let draw_ast_tree oc ast =
-  let (_, _, s) = draw_ast ast 1 in
+  let _, _, s = draw_ast ast 1 in
   let s = String.concat "" s in
   Format.fprintf oc "digraph G{\n%s\n}\n" s
 
 let rec string_of_ast a =
   match a with
   | Node (t, l) ->
-    Format.sprintf "Node(%s,%s)" (string_of_tag t)
-      (String.concat ", " (List.map string_of_ast l))
+      Format.sprintf "Node(%s,%s)" (string_of_tag t)
+        (String.concat ", " (List.map string_of_ast l))
   | StringLeaf s -> Format.sprintf "\"%s\"" s
   | IntLeaf i -> Format.sprintf "%d" i
   | CharLeaf i -> Format.sprintf "%c" i
   | NullLeaf -> "null"
 
-
-let rec resolve_associativity (term:tree) (other: tree list) : tree =
+let rec resolve_associativity (term : tree) (other : tree list) : tree =
   match other with
-  | Node (tag, l)::t  -> resolve_associativity (Node (tag, term::l)) t
-  | _    ->  term
+  | Node (tag, l) :: t -> resolve_associativity (Node (tag, term :: l)) t
+  | _ -> term

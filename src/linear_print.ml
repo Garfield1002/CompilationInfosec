@@ -4,14 +4,13 @@ open Linear
 open Prog
 open Utils
 
-
 let dump_linear_fun oc lives lfname l =
   Format.fprintf oc "%s(%s):\n" lfname
     (String.concat ", " $ List.map print_reg l.linearfunargs);
-  let lives = match lives with
+  let lives =
+    match lives with
     | None -> None
-    | Some lives -> 
-      (Hashtbl.find_option lives lfname)
+    | Some lives -> Hashtbl.find_option lives lfname
   in
   dump_rtl_node lfname lives oc l.linearfunbody
 

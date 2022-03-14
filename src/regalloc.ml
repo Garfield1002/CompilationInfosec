@@ -7,8 +7,6 @@ open Utils
 open Report
 open Options
 
-
-
 (* Allocation de registres *)
 
 (* Nous allons procéder à l'allocation de registres, par coloration de graphe
@@ -28,25 +26,23 @@ type loc = Reg of int | Stk of int
 (* Nous vous fournissons, ci-dessous, une implémentation naïve qui évince tous
    les pseudo-registres sur la pile. *)
 
-let regs_in_instr i =
-  Set.union (gen_live i) (kill_live i)
+let regs_in_instr i = Set.union (gen_live i) (kill_live i)
 
-let regs_in_instr_list (l: rtl_instr list) : reg Set.t =
-  List.fold_left
-    (fun acc i -> Set.union acc (regs_in_instr i))
-    Set.empty l
+let regs_in_instr_list (l : rtl_instr list) : reg Set.t =
+  List.fold_left (fun acc i -> Set.union acc (regs_in_instr i)) Set.empty l
 
-let regalloc_on_stack_fun (f: linear_fun) : ((reg, loc) Hashtbl.t * int)=
+let regalloc_on_stack_fun (f : linear_fun) : (reg, loc) Hashtbl.t * int =
   let allocation = Hashtbl.create 10 in
   let regs = regs_in_instr_list f.linearfunbody in
   let regs = Set.diff regs (Set.of_list f.linearfunargs) in
   let next_stack_slot =
-    List.fold_left (fun next_stack_slot r ->
-        Hashtbl.replace allocation r (Stk (next_stack_slot));
-        next_stack_slot - 1
-      ) (-1) (Set.to_list regs) in
+    List.fold_left
+      (fun next_stack_slot r ->
+        Hashtbl.replace allocation r (Stk next_stack_slot);
+        next_stack_slot - 1)
+      (-1) (Set.to_list regs)
+  in
   (allocation, next_stack_slot)
-
 
 (* Nous allons maintenant construire un graphe d'interférence de registres
    (register interference graph, ou rig). Le type d'un rig est donné par le type
@@ -74,67 +70,70 @@ let regalloc_on_stack_fun (f: linear_fun) : ((reg, loc) Hashtbl.t * int)=
    Attention, les interférences doivent exister dans les deux sens, i.e. si [x]
    est dans la liste d'interférence de [y], alors [y] doit être dans la liste
    d'interférence de [x].
-
 *)
 
-let add_interf (rig : (reg, reg Set.t) Hashtbl.t) (x: reg) (y: reg) : unit =
-    (* TODO *)
-    ()
+let add_interf (rig : (reg, reg Set.t) Hashtbl.t) (x : reg) (y : reg) : unit =
+  let add_interf' (x : reg) (y : reg) : unit =
+    let s = Hashtbl.find_option rig x in
+    match s with
+    | None -> Hashtbl.replace rig x (Set.singleton y)
+    | Some s -> Hashtbl.replace rig x (Set.add y s)
+  in
+  if x = y then ()
+  else (
+    add_interf' x y;
+    add_interf' y x)
 
-
-(* [make_interf_live rig live] ajoute des arcs dans le graphe d'interférence
+(** [make_interf_live rig live] ajoute des arcs dans le graphe d'interférence
    pour chaque paire de registres vivants en même temps à un point de programme.
-   *)
-let make_interf_live
-    (rig: (reg, reg Set.t) Hashtbl.t)
+*)
+let make_interf_live (rig : (reg, reg Set.t) Hashtbl.t)
     (live : (int, reg Set.t) Hashtbl.t) : unit =
-    (* TODO *)
-   ()
+  let f _ s = Set.iter (fun x -> Set.iter (fun y -> add_interf rig x y) s) s in
+  Hashtbl.iter f live
 
-(* [build_interference_graph live_out] construit, en utilisant les fonctions que
+(** [build_interference_graph live_out] construit, en utilisant les fonctions que
    vous avez écrites, le graphe d'interférence en fonction de la vivacité des
    variables à la sortie des nœuds donné par [live_out].
 
    Offert par la maison !
 *)
-let build_interference_graph (live_out : (int, reg Set.t) Hashtbl.t) code : (reg, reg Set.t) Hashtbl.t  =
+let build_interference_graph (live_out : (int, reg Set.t) Hashtbl.t) code :
+    (reg, reg Set.t) Hashtbl.t =
   let interf = Hashtbl.create 17 in
   (* On ajoute un sommet pour chaque variable qui apparaît dans le programme. *)
-  Hashtbl.iter (fun _ s ->
-      Set.iter (fun v -> Hashtbl.replace interf v Set.empty) s
-    ) live_out;
+  Hashtbl.iter
+    (fun _ s -> Set.iter (fun v -> Hashtbl.replace interf v Set.empty) s)
+    live_out;
   make_interf_live interf live_out;
-(* Les registres dans lesquels on écrit mais qui ne sont jamais vivants doivent être considérés comme en interférence avec tous les autres. *)
+  (* Les registres dans lesquels on écrit mais qui ne sont jamais vivants doivent être considérés comme en interférence avec tous les autres. *)
   let written_regs = written_rtl_regs code in
   let written_regs_never_live =
-    Hashtbl.fold (fun _ regset_live_together acc -> Set.diff acc regset_live_together) live_out
-      written_regs in
+    Hashtbl.fold
+      (fun _ regset_live_together acc -> Set.diff acc regset_live_together)
+      live_out written_regs
+  in
   let other_regs = Hashtbl.keys interf |> Set.of_enum in
-  Set.iter (fun r ->
-      Set.iter (fun r_other ->
-          add_interf interf r r_other
-        ) other_regs
-    ) written_regs_never_live;
+  Set.iter
+    (fun r -> Set.iter (fun r_other -> add_interf interf r r_other) other_regs)
+    written_regs_never_live;
   interf
 
-(* [remove_from_rig rig v] supprime le sommet [v] du graphe d'interférences
+(** [remove_from_rig rig v] removes the node [v] from the interference graph
    [rig]. *)
-let remove_from_rig (rig : (reg, reg Set.t) Hashtbl.t)  (v: reg) : unit =
-   (* TODO *)
-   ()
-
+let remove_from_rig (rig : (reg, reg Set.t) Hashtbl.t) (v : reg) : unit =
+  Hashtbl.remove rig v;
+  Hashtbl.map_inplace (fun _ s -> Set.remove v s) rig
 
 (* Type représentant les différentes décisions qui peuvent être prises par
    l'allocateur de registres.
 
    - [Spill r] signifie que le pseudo-registre [r] sera évincé (spillé) sur la pile.
-    
+
    - [NoSpill r] signifie que le pseudo-registre [r] sera alloué dans un vrai
    registre physique.
 *)
-type regalloc_decision =
-    Spill of reg
-  | NoSpill of reg
+type regalloc_decision = Spill of reg | NoSpill of reg
 
 (* Rappel de l'algorithme d'empilement des registres *)
 
@@ -152,15 +151,16 @@ type regalloc_decision =
    correspondant à un registre que l'on évincera (ce sera le travail de la
    fonction [pick_spilling_candidate]). Empiler la décision [Spill s] et retirer
    [s] du graphe.
-
 *)
 
 (* [pick_node_with_fewer_than_n_neighbors rig n] choisit un nœud du graphe [rig]
    possédant strictement moins de [n] voisins. Retourne [None] si aucun sommet
    ne satisfait cette condition. *)
-let pick_node_with_fewer_than_n_neighbors (rig : (reg, reg Set.t) Hashtbl.t) (n: int) : reg option =
-   (* TODO *)
-   None
+let pick_node_with_fewer_than_n_neighbors (rig : (reg, reg Set.t) Hashtbl.t)
+    (n : int) : reg option =
+  let candidates = Hashtbl.filter (fun s -> Set.cardinal s < n) rig in
+  if Hashtbl.is_empty candidates then None
+  else candidates |> Hashtbl.to_list |> List.first |> fst |> fun x -> Some x
 
 (* Lorsque la fonction précédente échoue (i.e. aucun sommet n'a moins de [n]
    voisins), on choisit un pseudo-registre à évincer.
@@ -170,16 +170,28 @@ let pick_node_with_fewer_than_n_neighbors (rig : (reg, reg Set.t) Hashtbl.t) (n:
 
    [pick_spilling_candidate rig] retourne donc le pseudo-registre [r] qui a le
    plus de voisins dans [rig], ou [None] si [rig] est vide. *)
-let pick_spilling_candidate (rig : (reg, reg Set.t) Hashtbl.t)  : reg option =
-   (* TODO *)
-   None
+let pick_spilling_candidate (rig : (reg, reg Set.t) Hashtbl.t) : reg option =
+  let l = Hashtbl.to_list rig in
+  let l =
+    List.sort (fun (_, s1) (_, s2) -> Set.cardinal s2 - Set.cardinal s1) l
+  in
+  if List.is_empty l then None else l |> List.first |> fst |> fun x -> Some x
 
 (* [make_stack rig stack ncolors] construit la pile, selon l'algorithme vu en
    cours (slides 60 à 63 du cours "Allocation de registres - Autres slides"
    présent sur Edunao.) *)
-let rec make_stack (rig : (reg, reg Set.t) Hashtbl.t)  (stack : regalloc_decision list) (ncolors: int) : regalloc_decision list =
-   (* TODO *)
-   stack
+let rec make_stack (rig : (reg, reg Set.t) Hashtbl.t)
+    (stack : regalloc_decision list) (ncolors : int) : regalloc_decision list =
+  let ns = pick_node_with_fewer_than_n_neighbors rig ncolors in
+  if Option.is_some ns then (
+    remove_from_rig rig (Option.get ns);
+    make_stack rig (NoSpill (Option.get ns) :: stack) ncolors)
+  else
+    let s = pick_spilling_candidate rig in
+    if Option.is_some s then (
+      remove_from_rig rig (Option.get s);
+      make_stack rig (Spill (Option.get s) :: stack) ncolors)
+    else stack
 
 (* Maintenant que nous avons une pile de [regalloc_decision], il est temps de
    colorer notre graphe, i.e. associer une couleur (un numéro de registre
@@ -212,14 +224,31 @@ let rec make_stack (rig : (reg, reg Set.t) Hashtbl.t)  (stack : regalloc_decisio
 
    Cette fonction met à jour [allocation] et renvoie la nouvelle valeur de
    [next_stack_slot].
-
 *)
-let allocate (allocation: (reg, loc) Hashtbl.t) (rig: (reg, reg Set.t) Hashtbl.t)
-    (all_colors: int Set.t)
-    (next_stack_slot: int) (decision: regalloc_decision)
-  : int =
-   (* TODO *)
-   next_stack_slot
+let allocate (allocation : (reg, loc) Hashtbl.t)
+    (rig : (reg, reg Set.t) Hashtbl.t) (all_colors : int Set.t)
+    (next_stack_slot : int) (decision : regalloc_decision) : int =
+  match decision with
+  | Spill r ->
+      Hashtbl.replace allocation r (Stk next_stack_slot);
+      next_stack_slot - 1
+  | NoSpill r ->
+      let neighboursOption = Hashtbl.find_option rig r in
+      let neighbours =
+        if Option.is_none neighboursOption then Set.empty
+        else Option.get neighboursOption
+      in
+      let neighbourColors =
+        Set.filter_map
+          (fun r ->
+            match Hashtbl.find_option allocation r with
+            | Some (Reg c) -> Some c
+            | _ -> None)
+          neighbours
+      in
+      Hashtbl.replace allocation r
+        (Set.diff all_colors neighbourColors |> Set.min_elt |> fun x -> Reg x);
+      next_stack_slot
 
 (* [regalloc_fun f live_out all_colors] effectue l'allocation de registres pour
    la fonction [f].
@@ -238,13 +267,13 @@ let allocate (allocation: (reg, loc) Hashtbl.t) (rig: (reg, reg Set.t) Hashtbl.t
    - [next_stack_slot] est le prochain emplacement disponible sur la pile
    (utilisé dans [ltl_gen], qui vous est fourni.)
 *)
-let regalloc_fun (f: linear_fun)
-    (live_out: (int, reg Set.t) Hashtbl.t)
-    (all_colors: int Set.t) :
-  (reg, reg Set.t) Hashtbl.t      (* the RIG *)
-  * (reg, loc) Hashtbl.t          (* the allocation *)
-  * int                         (* the next stack slot *)
-  =
+let regalloc_fun (f : linear_fun) (live_out : (int, reg Set.t) Hashtbl.t)
+    (all_colors : int Set.t) :
+    (reg, reg Set.t) Hashtbl.t
+    (* the RIG *)
+    * (reg, loc) Hashtbl.t
+    (* the allocation *)
+    * int (* the next stack slot *) =
   let rig = build_interference_graph live_out f.linearfunbody in
 
   let allocation = Hashtbl.create 17 in
@@ -257,65 +286,92 @@ let regalloc_fun (f: linear_fun)
   let g = Hashtbl.copy rig in
   let stack = make_stack g [] (Set.cardinal all_colors) in
   let next_stack_slot =
-    List.fold_left (fun next_stack_slot decision ->
-        allocate allocation rig all_colors next_stack_slot decision
-      ) (-1) stack in
+    List.fold_left
+      (fun next_stack_slot decision ->
+        allocate allocation rig all_colors next_stack_slot decision)
+      (-1) stack
+  in
   (rig, allocation, next_stack_slot)
-
 
 (* [dump_interf_graph fname rig] affiche les interférences associées à chaque
    registre. Peut être utile pour le débogage ! Pas besoin d'inspecter cette
    fonction, à moins qu'elle soit buggée... :-) *)
 let dump_interf_graph oc (fname, rig, allocation) =
-  let colors = Array.of_list [
-      "blue"; "red"; "orange"; "pink"; "green"; "purple";
-      "brown"; "turquoise"; "gray"; "gold"; "darkorchid"; "bisque";
-      "darkseagreen"; "cornsilk"; "burlywood"; "dodgerblue"; "antiquewhite"; "firebrick";
-      "deepskyblue"; "darkolivegreen"; "hotpink"; "lightsalmon"; "magenta"; "lawngreen";
-    ] in
+  let colors =
+    Array.of_list
+      [
+        "blue";
+        "red";
+        "orange";
+        "pink";
+        "green";
+        "purple";
+        "brown";
+        "turquoise";
+        "gray";
+        "gold";
+        "darkorchid";
+        "bisque";
+        "darkseagreen";
+        "cornsilk";
+        "burlywood";
+        "dodgerblue";
+        "antiquewhite";
+        "firebrick";
+        "deepskyblue";
+        "darkolivegreen";
+        "hotpink";
+        "lightsalmon";
+        "magenta";
+        "lawngreen";
+      ]
+  in
   let color_of_allocation r =
     match Hashtbl.find_option allocation r with
-    | Some (Reg r) ->
-      Array.get colors (r mod Array.length colors)
+    | Some (Reg r) -> Array.get colors (r mod Array.length colors)
     | _ -> "white"
   in
   Format.fprintf oc "subgraph cluster_%s{\n" fname;
   Format.fprintf oc "label=\"%s\";\n" fname;
-  Hashtbl.keys rig |> Enum.iter (fun r ->
-      Format.fprintf oc "%s_r%d [label=\"r%d\",style=filled,fillcolor=\"%s\"];\n" fname r r (color_of_allocation r)
-    );
+  Hashtbl.keys rig
+  |> Enum.iter (fun r ->
+         Format.fprintf oc
+           "%s_r%d [label=\"r%d\",style=filled,fillcolor=\"%s\"];\n" fname r r
+           (color_of_allocation r));
   Hashtbl.iter
     (fun i s ->
-       Set.iter (fun x ->
-           Format.fprintf oc "%s_r%d -> %s_r%d;\n" fname i fname x
-         ) s;)
+      Set.iter
+        (fun x -> Format.fprintf oc "%s_r%d -> %s_r%d;\n" fname i fname x)
+        s)
     rig;
   Format.fprintf oc "}\n"
 
 let dump_interf_graphs oc allocations =
   Format.fprintf oc "digraph RIGS {\n";
-  Hashtbl.iter (fun fname (rig, allocation, next_stack_slot) ->
-      dump_interf_graph oc (fname, rig, allocation)
-    ) allocations;
+  Hashtbl.iter
+    (fun fname (rig, allocation, next_stack_slot) ->
+      dump_interf_graph oc (fname, rig, allocation))
+    allocations;
   Format.fprintf oc "}\n"
 
 (* On applique l'allocation de registres à tout le programme Linear, et on
    affiche tout ça dans le rapport (la page HTML de chaque fichier). *)
 let regalloc lp lives all_colors =
   let allocations = Hashtbl.create 17 in
-  List.iter (function (fname,Gfun f) ->
-      begin match Hashtbl.find_option lives fname with
-      | Some (live_in, live_out) ->
-        let (rig, allocation, curstackslot) =
-          if !Options.naive_regalloc
-          then let (al, nss) = regalloc_on_stack_fun f in
-            (Hashtbl.create 0, al, nss)
-          else regalloc_fun f live_out all_colors
-        in
-        Hashtbl.replace allocations fname (rig, allocation, curstackslot)
-      | None -> ()
-      end
-    ) lp;
+  List.iter
+    (function
+      | fname, Gfun f -> (
+          match Hashtbl.find_option lives fname with
+          | Some (live_in, live_out) ->
+              let rig, allocation, curstackslot =
+                if !Options.naive_regalloc then
+                  let al, nss = regalloc_on_stack_fun f in
+                  (Hashtbl.create 0, al, nss)
+                else regalloc_fun f live_out all_colors
+              in
+              Hashtbl.replace allocations fname (rig, allocation, curstackslot)
+          | None -> ()))
+    lp;
   dump !Options.rig_dump dump_interf_graphs allocations
     (call_dot "regalloc" "Register Allocation");
   allocations
