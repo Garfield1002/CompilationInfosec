@@ -24,10 +24,14 @@ let eval_cfgprog oc cp memsize params =
         match Hashtbl.find_option st.env s with
         | Some v -> OK v
         | None -> Error (Printf.sprintf "Unknown variable %s\n" s))
+    | Ecall (fname, params) when is_builtin fname ->
+        Utils.list_map_res (eval_cfgexpr st) params >>= fun params ->
+        do_builtin oc st.mem fname params >>= fun res ->
+        if Option.is_some res then OK (Option.get res) else Error "No output"
     | Ecall (fname, params) -> (
         Utils.list_map_res (eval_cfgexpr st) params >>= fun params ->
         find_function cp fname >>= fun f ->
-        eval_cfgfun oc st f fname params >>= fun (v, st) ->
+        eval_cfgfun oc st f fname params >>= fun (v, _) ->
         match v with None -> Error "No output" | Some ret -> OK ret)
   and eval_cfginstr oc st ht (n : int) : (int * int state) res =
     match Hashtbl.find_option ht n with
@@ -48,6 +52,11 @@ let eval_cfgprog oc cp memsize params =
             eval_cfgexpr st e >>= fun e ->
             Format.fprintf oc "%d\n" e;
             eval_cfginstr oc st ht succ
+        | Ccall (fname, params, succ) when is_builtin fname ->
+            Utils.list_map_res (eval_cfgexpr st) params >>= fun params ->
+            do_builtin oc st.mem fname params >>= fun res ->
+            if Option.is_some res then OK (Option.get res, st)
+            else eval_cfginstr oc st ht succ
         | Ccall (fname, params, succ) -> (
             Utils.list_map_res (eval_cfgexpr st) params >>= fun params ->
             find_function cp fname >>= fun f ->

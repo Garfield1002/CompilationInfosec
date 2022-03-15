@@ -72,6 +72,18 @@ let rec exec_linear_instr oc lp fname f st (i : rtl_instr) =
       | _ ->
           Error (Printf.sprintf "Ret on undefined register (%s)" (print_reg r)))
   | Rlabel n -> OK (None, st)
+  | Rcall (Some rd, fname, params) when is_builtin fname ->
+      let params = List.filter_map (Hashtbl.find_option st.regs) params in
+      do_builtin oc st.mem fname params >>= fun res ->
+      if Option.is_some res then (
+        Hashtbl.replace st.regs rd (Option.get res);
+        OK (None, st))
+      else
+        fname |> Printf.sprintf "Function %s did not return a value" |> fun x ->
+        Error x
+  | Rcall (None, fname, params) when is_builtin fname ->
+      let params = List.filter_map (Hashtbl.find_option st.regs) params in
+      do_builtin oc st.mem fname params >>= fun _ -> OK (None, st)
   | Rcall (Some rd, fname, params) ->
       let params = List.filter_map (Hashtbl.find_option st.regs) params in
       find_function lp fname >>= fun f ->

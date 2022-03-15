@@ -59,7 +59,7 @@ rule token = parse
   | '"' { read_string (Buffer.create 17) lexbuf  }
   | eof { SYM_EOF }
   | _ as x { failwith (Printf.sprintf "unexpected char '%c' at %s \n" x (string_of_position (Lexing.lexeme_start_p lexbuf)))}
-    
+
 
 and parse_char = parse
   | "\\n'" { SYM_CHARACTER '\n' }

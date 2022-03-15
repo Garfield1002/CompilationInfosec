@@ -139,9 +139,7 @@ let rtl_instrs_of_cfg_node ((next_reg : int), (var2reg : (string * int) list))
       let rs, ls, next_reg, var2reg =
         List.fold_left f ([], [], next_reg, var2reg) params
       in
-      ( Rjmp next :: Rcall (Some next_reg, fname, List.rev rs) :: ls,
-        next_reg,
-        var2reg )
+      (Rjmp next :: Rcall (None, fname, List.rev rs) :: ls, next_reg, var2reg)
 
 let rtl_instrs_of_cfg_fun cfgfunname
     ({ cfgfunargs; cfgfunbody; cfgentry } : cfg_fun) =

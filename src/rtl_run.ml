@@ -82,6 +82,18 @@ let rec exec_rtl_instr oc rp rtlfunname f st (i : rtl_instr) =
           Error
             (Printf.sprintf "Print on undefined register (%s)" (print_reg r)))
   | Rlabel n -> OK (None, st)
+  | Rcall (Some rd, fname, params) when is_builtin fname ->
+      let params = List.filter_map (Hashtbl.find_option st.regs) params in
+      do_builtin oc st.mem fname params >>= fun res ->
+      if Option.is_some res then (
+        Hashtbl.replace st.regs rd (Option.get res);
+        OK (None, st))
+      else
+        fname |> Printf.sprintf "Function %s did not return a value" |> fun x ->
+        Error x
+  | Rcall (None, fname, params) when is_builtin fname ->
+      let params = List.filter_map (Hashtbl.find_option st.regs) params in
+      do_builtin oc st.mem fname params >>= fun _ -> OK (None, st)
   | Rcall (Some rd, fname, params) ->
       let params = List.filter_map (Hashtbl.find_option st.regs) params in
       find_function rp fname >>= fun f ->
@@ -95,7 +107,7 @@ let rec exec_rtl_instr oc rp rtlfunname f st (i : rtl_instr) =
   | Rcall (None, fname, params) ->
       let params = List.filter_map (Hashtbl.find_option st.regs) params in
       find_function rp fname >>= fun f ->
-      exec_rtl_fun oc rp st fname f params >>= fun (v, _) -> OK (None, st)
+      exec_rtl_fun oc rp st fname f params >>= fun (_, st) -> OK (None, st)
 
 and exec_rtl_instr_at oc rp rtlfunname ({ rtlfunbody } as f : rtl_fun) st i =
   match Hashtbl.find_option rtlfunbody i with

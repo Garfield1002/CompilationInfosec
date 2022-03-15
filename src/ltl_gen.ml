@@ -351,10 +351,11 @@ let ltl_instrs_of_linear_instr fname live_out allocation numspilled
         >>= fun (parameter_passing_instuctions, npush) ->
         OK
           ((LComment "Saving a0-a7,t0-t6" :: save_regs_instructions)
-          @ LAddi (reg_sp, reg_s0, Archi.wordsize () * (ofs + npush))
-            :: parameter_passing_instuctions
-          @ LCall fname :: LComment "Restoring a0-a7,t0-t6"
-            :: restore_caller_save arg_saved)
+          @ (LAddi (reg_sp, reg_sp, ofs) :: parameter_passing_instuctions)
+          @ (LCall fname :: parameter_passing_instuctions)
+          @ [ LAddi (reg_sp, reg_sp, npush * Archi.wordsize ()) ]
+          @ (LComment "Restoring a0-a7,t0-t6" :: restore_caller_save arg_saved)
+          )
     | Rcall (Some rd, fname, rargs) ->
         store_loc reg_tmp1 allocation rd >>= fun (ld, rd) ->
         caller_save live_out allocation rargs >>= fun to_save ->
@@ -370,7 +371,7 @@ let ltl_instrs_of_linear_instr fname live_out allocation numspilled
           @ [ LCall fname ]
           @ (LMov (rd, reg_a0) :: ld)
           @ parameter_passing_instuctions
-          @ [ LAddi (reg_sp, reg_sp, -npush * Archi.wordsize ()) ]
+          @ [ LAddi (reg_sp, reg_sp, npush * Archi.wordsize ()) ]
           @ (LComment "Restoring a0-a7,t0-t6" :: restore_caller_save arg_saved)
           )
   in

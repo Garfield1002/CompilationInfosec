@@ -48,6 +48,10 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
         let v = Hashtbl.find_option st.env s in
         if Option.is_none v then Error (Printf.sprintf "Unknown variable %s" s)
         else OK (Option.get v)
+    | Ecall (fname, params) when is_builtin fname ->
+        Utils.list_map_res (eval_eexpr st) params >>= fun params ->
+        do_builtin oc st.mem fname params >>= fun res ->
+        if Option.is_some res then OK (Option.get res) else Error "No output"
     | Ecall (fname, params) -> (
         Utils.list_map_res (eval_eexpr st) params >>= fun params ->
         find_function ep fname >>= fun f ->
@@ -90,6 +94,9 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
     | Iblock (h :: t) ->
         eval_einstr oc st h >>= fun (ret, s) ->
         if Option.is_none ret then eval_einstr oc s (Iblock t) else OK (ret, s)
+    | Icall (fname, params) when is_builtin fname ->
+        Utils.list_map_res (eval_eexpr st) params >>= fun params ->
+        do_builtin oc st.mem fname params >>= fun res -> OK (res, st)
     | Icall (fname, params) ->
         Utils.list_map_res (eval_eexpr st) params >>= fun params ->
         find_function ep fname >>= fun f ->
