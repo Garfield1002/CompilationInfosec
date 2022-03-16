@@ -1,5 +1,6 @@
 open Batteries
 open BatPrintf
+open Prog
 
 (* Les AST sont des arbres, du type [tree], étiquetés par des [tag].
 
@@ -22,6 +23,7 @@ open BatPrintf
 *)
 
 type tag =
+  | Tdeclare
   | Tassign
   | Tif
   | Twhile
@@ -53,12 +55,16 @@ type tag =
   | Targ
   | Targs
   | Tcall
+  | Tassignchar
+  | Tchar
 
 type tree =
   | Node of tag * tree list
   | StringLeaf of string
   | IntLeaf of int
   | NullLeaf
+  | CharLeaf of char
+  | TypeLeaf of typ
 
 let string_of_stringleaf = function
   | StringLeaf s -> s
@@ -69,6 +75,7 @@ type ast = (string * astfun) list
 
 let string_of_tag = function
   | Tassign -> "Tassign"
+  | Tdeclare -> "Tdeclare"
   | Tif -> "Tif"
   | Twhile -> "Twhile"
   | Tblock -> "Tblock"
@@ -93,12 +100,14 @@ let string_of_tag = function
   | Tfunargs -> "Tfunargs"
   | Tfunbody -> "Tfunbody"
   | Tassignvar -> "Tassignvar"
+  | Tassignchar -> "Tassignchar"
   | Targ -> "Targ"
   | Telse -> "Telse"
   | Tneg -> "Tneg"
   | Tne -> "Tneg"
   | Tcall -> "Tcall"
   | Targs -> "Targs"
+  | Tchar -> "Tchar"
 
 (* Écrit un fichier .dot qui correspond à un AST *)
 let rec draw_ast a next =
@@ -118,6 +127,10 @@ let rec draw_ast a next =
         @ List.map (fun n -> Format.sprintf "n%d -> n%d\n" next n) nodes )
   | StringLeaf s ->
       (next, next + 1, [ Format.sprintf "n%d [label=\"%s\"]\n" next s ])
+  | TypeLeaf t ->
+      ( next,
+        next + 1,
+        [ Format.sprintf "n%d [label=\"%s\"]\n" next (string_of_typ t) ] )
   | IntLeaf i ->
       (next, next + 1, [ Format.sprintf "n%d [label=\"%d\"]\n" next i ])
   | NullLeaf ->
@@ -134,6 +147,7 @@ let rec string_of_ast a =
       Format.sprintf "Node(%s,%s)" (string_of_tag t)
         (String.concat ", " (List.map string_of_ast l))
   | StringLeaf s -> Format.sprintf "\"%s\"" s
+  | TypeLeaf t -> t |> string_of_typ |> Format.sprintf "\"%s\""
   | IntLeaf i -> Format.sprintf "%d" i
   | NullLeaf -> "null"
 

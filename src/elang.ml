@@ -26,6 +26,7 @@ type expr =
   | Eint of int
   | Evar of string
   | Ecall of string * expr list
+  | Echar of char
 
 type instr =
   | Iassign of string * expr
@@ -36,5 +37,11 @@ type instr =
   | Iprint of expr
   | Icall of string * expr list
 
-type efun = { funargs : string list; funbody : instr }
+type efun = {
+  funargs : (string * typ) list;
+  funbody : instr;
+  funvartyp : (string, typ) Hashtbl.t;
+  funrettype : typ;
+}
+
 type eprog = efun prog
