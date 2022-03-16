@@ -59,7 +59,6 @@ type tree =
   | StringLeaf of string
   | IntLeaf of int
   | NullLeaf
-  | CharLeaf of char
 
 let string_of_stringleaf = function
   | StringLeaf s -> s
@@ -123,8 +122,6 @@ let rec draw_ast a next =
       (next, next + 1, [ Format.sprintf "n%d [label=\"%d\"]\n" next i ])
   | NullLeaf ->
       (next, next + 1, [ Format.sprintf "n%d [label=\"null\"]\n" next ])
-  | CharLeaf i ->
-      (next, next + 1, [ Format.sprintf "n%d [label=\"%c\"]\n" next i ])
 
 let draw_ast_tree oc ast =
   let _, _, s = draw_ast ast 1 in
@@ -138,7 +135,6 @@ let rec string_of_ast a =
         (String.concat ", " (List.map string_of_ast l))
   | StringLeaf s -> Format.sprintf "\"%s\"" s
   | IntLeaf i -> Format.sprintf "%d" i
-  | CharLeaf i -> Format.sprintf "%c" i
   | NullLeaf -> "null"
 
 let rec resolve_associativity (term : tree) (other : tree list) : tree =
