@@ -44,6 +44,7 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
         | _ -> OK (eval_binop binop i j))
     | Eunop (unop, i) -> eval_eexpr st i >>= fun i -> OK (eval_unop unop i)
     | Eint i -> OK i
+    | Echar c -> OK (int_of_char c)
     | Evar s ->
         let v = Hashtbl.find_option st.env s in
         if Option.is_none v then Error (Printf.sprintf "Unknown variable %s" s)
@@ -115,7 +116,11 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
        seulement ses arguments), puis on restore l'environnement de l'appelant. *)
     let env_save = Hashtbl.copy st.env in
     let env = Hashtbl.create 17 in
-    match List.iter2 (fun a v -> Hashtbl.replace env a v) funargs vargs with
+    match
+      List.iter2
+        (fun a v -> Hashtbl.replace env a v)
+        (List.map fst funargs) vargs
+    with
     | () ->
         eval_einstr oc { st with env } funbody >>= fun (v, st') ->
         OK (v, { st' with env = env_save })
@@ -147,6 +152,8 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
   let n = List.length f.funargs in
   let params = take n params in
   let _ =
-    List.map (uncurry (Hashtbl.replace st.env)) (combine f.funargs params)
+    List.map
+      (uncurry (Hashtbl.replace st.env))
+      (combine (List.map fst f.funargs) params)
   in
   eval_efun oc st f "main" params >>= fun (v, st) -> OK v
