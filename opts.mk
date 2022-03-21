@@ -1,4 +1,4 @@
-CONF_OPTS=
+CONF_OPTS=-clever-regalloc
 
 # Use handwritten lexer
 CONF_OPTS+=-l

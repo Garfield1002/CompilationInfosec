@@ -10,6 +10,8 @@ type expr =
   | Eint of int
   | Evar of string
   | Ecall of string * expr list
+  | Estk of int
+  | Eload of expr * int
 
 type cfg_node =
   | Cassign of string * expr * int
@@ -18,11 +20,13 @@ type cfg_node =
   | Ccmp of expr * int * int
   | Cnop of int
   | Ccall of string * expr list * int
+  | Cstore of expr * expr * int * int
 
 type cfg_fun = {
   cfgfunargs : string list;
   cfgfunbody : (int, cfg_node) Hashtbl.t;
   cfgentry : int;
+  cfgfunstksz : int;
 }
 
 type cprog = cfg_fun prog
@@ -35,7 +39,8 @@ let succs cfg n =
   | Some (Ccall (_, _, succ))
   | Some (Cnop succ)
   | Some (Cprint (_, succ))
-  | Some (Cassign (_, _, succ)) ->
+  | Some (Cassign (_, _, succ))
+  | Some (Cstore (_, _, _, succ)) ->
       Set.singleton succ
   | Some (Creturn _) -> Set.empty
   | Some (Ccmp (_, s1, s2)) -> Set.of_list [ s1; s2 ]
@@ -46,8 +51,11 @@ let preds cfgfunbody n =
   Hashtbl.fold
     (fun m m' acc ->
       match m' with
-      | Cassign (_, _, succ) | Cprint (_, succ) | Cnop succ | Ccall (_, _, succ)
-        ->
+      | Cassign (_, _, succ)
+      | Cprint (_, succ)
+      | Cnop succ
+      | Ccall (_, _, succ)
+      | Cstore (_, _, _, succ) ->
           if succ = n then Set.add m acc else acc
       | Creturn _ -> acc
       | Ccmp (_, s1, s2) -> if s1 = n || s2 = n then Set.add m acc else acc)

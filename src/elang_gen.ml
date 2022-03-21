@@ -22,6 +22,21 @@ let tag_is_binop = function
   | Tcne -> true
   | _ -> false
 
+let string_of_binary = function
+  | Tadd -> "+"
+  | Tsub -> "-"
+  | Tmul -> "*"
+  | Tdiv -> "/"
+  | Tmod -> "%"
+  | Txor -> "^"
+  | Tcle -> "<="
+  | Tclt -> "<"
+  | Tcge -> ">="
+  | Tcgt -> ">"
+  | Tceq -> "=="
+  | Tcne -> "!="
+  | _ -> ""
+
 let binop_of_tag = function
   | Tadd -> Eadd
   | Tsub -> Esub
@@ -37,61 +52,109 @@ let binop_of_tag = function
   | Tcne -> Ecne
   | _ -> assert false
 
-let rec type_expr (typ_var : (string, typ) Hashtbl.t)
-    (typ_fun : (string, typ list * typ) Hashtbl.t) (e : expr) : typ res =
-  match e with
-  | Ebinop (_, e1, e2) ->
-      type_expr typ_var typ_fun e1 >>= fun t1 ->
-      type_expr typ_var typ_fun e2 >>= fun t2 ->
-      if typCompat t1 t2 then OK t1
-      else
-        Error
-          (Printf.sprintf "Incompatible types [%s] and [%s]" (string_of_typ t1)
-             (string_of_typ t2))
-  | Eunop (_, e) -> type_expr typ_var typ_fun e
-  | Eint _ -> OK Tint
-  | Echar _ -> OK Tchar
-  | Evar v -> (
-      match Hashtbl.find_option typ_var v with
-      | None ->
-          v |> Printf.sprintf "Variable \'%s\' is undeclared" |> fun x ->
-          Error x
-      | Some t -> OK t)
-  | Ecall (fname, params) -> (
-      match Hashtbl.find_option typ_fun fname with
-      | None ->
-          fname |> Printf.sprintf "Function \'%s\' is undeclared" |> fun x ->
-          Error x
-      | Some (expectedParamsT, t) ->
-          Utils.list_map_res (type_expr typ_var typ_fun) params
-          >>= fun paramsT ->
-          if
-            List.fold_left2
-              (fun acc t et -> acc && typCompat t et)
-              true paramsT expectedParamsT
-          then OK t
-          else
-            fname |> Printf.sprintf "Called \'%s\' with arguments of wrong type"
-            |> fun x -> Error x)
+let rec typCompatBinop b t1 t2 =
+  match (t1, t2) with
+  | _, _ when t1 = t2 -> true
+  | Tptr t1', Tptr t2' -> typCompat t1' t2'
+  | Tptr _, _ | _, Tptr _ -> false
+  | Tvoid, _ | _, Tvoid -> false
+  | _ -> true
+
+(* let rec type_expr (typ_var : (string, typ) Hashtbl.t)
+     (typ_fun : (string, typ list * typ) Hashtbl.t) (e : expr) : typ res =
+   match e with
+   | Ebinop (_, e1, e2) ->
+       type_expr typ_var typ_fun e1 >>= fun t1 ->
+       type_expr typ_var typ_fun e2 >>= fun t2 ->
+       if typCompat t1 t2 then OK t1
+       else
+         Error
+           (Printf.sprintf "Incompatible types [%s] and [%s]" (string_of_typ t1)
+              (string_of_typ t2))
+   | Eunop (_, e) -> type_expr typ_var typ_fun e
+   | Eint _ -> OK Tint
+   | Echar _ -> OK Tchar
+   | Evar v -> (
+       match Hashtbl.find_option typ_var v with
+       | None ->
+           v |> Printf.sprintf "Variable \'%s\' is undeclared" |> fun x ->
+           Error x
+       | Some t -> OK t)
+   | Ecall (fname, params) -> (
+       match Hashtbl.find_option typ_fun fname with
+       | None ->
+           fname |> Printf.sprintf "Function \'%s\' is undeclared" |> fun x ->
+           Error x
+       | Some (expectedParamsT, t) ->
+           Utils.list_map_res (type_expr typ_var typ_fun) params
+           >>= fun paramsT ->
+           if
+             List.fold_left2
+               (fun acc t et -> acc && typCompat t et)
+               true paramsT expectedParamsT
+           then OK t
+           else
+             fname |> Printf.sprintf "Called \'%s\' with arguments of wrong type"
+             |> fun x -> Error x) *)
 
 (* [make_eexpr_of_ast a] builds an expression corresponding to a tree [a]. If
    the tree is not well-formed, fails with an [Error] message. *)
 let rec make_eexpr_of_ast (typ_var : (string, typ) Hashtbl.t)
-    (typ_fun : (string, typ list * typ) Hashtbl.t) (a : tree) : (expr * typ) res
-    =
+    (typ_fun : (string, typ list * typ) Hashtbl.t)
+    (funvarinmem : (string, int) Hashtbl.t) (funstksz : int ref) (a : tree) :
+    (expr * typ) res =
+  let make_eexpr_of_ast_params =
+    make_eexpr_of_ast typ_var typ_fun funvarinmem funstksz
+  in
   let res =
     match a with
-    | Node (t, [ e1; e2 ]) when tag_is_binop t ->
-        make_eexpr_of_ast typ_var typ_fun e1 >>= fun (a1, t1) ->
-        make_eexpr_of_ast typ_var typ_fun e2 >>= fun (a2, t2) ->
-        if typCompat t1 t2 then OK (Ebinop (binop_of_tag t, a1, a2), t1)
+    | Node (t, [ e1; e2 ]) when tag_is_binop t -> (
+        make_eexpr_of_ast_params e1 >>= fun (a1, t1) ->
+        make_eexpr_of_ast_params e2 >>= fun (a2, t2) ->
+        match (t, t1, t2) with
+        | Tadd, Tptr p, _ when isArithmetic t2 ->
+            OK (Ebinop (Eadd, a1, a2), Tptr p)
+        | Tadd, _, Tptr p when isArithmetic t1 ->
+            OK (Ebinop (Eadd, a1, a2), Tptr p)
+        | Tsub, Tptr p, _ when isArithmetic t2 ->
+            OK (Ebinop (Esub, a1, a2), Tptr p)
+        | _, _, _ when isArithmetic t1 && isArithmetic t2 ->
+            OK (Ebinop (binop_of_tag t, a1, a2), t1)
+        | _, _, _ ->
+            Error
+              (Printf.sprintf
+                 "Invalid operands to binary %s (have \'%s\' and \'%s\')"
+                 (string_of_binary t) (string_of_typ t1) (string_of_typ t2)))
+    | Node (Tneg, [ e ]) ->
+        make_eexpr_of_ast_params e >>= fun (a, t) ->
+        if isArithmetic t then OK (Eunop (Eneg, a), t)
         else
           Error
-            (Printf.sprintf "Incompatible types [%s] and [%s]"
-               (string_of_typ t1) (string_of_typ t2))
-    | Node (Tneg, [ e ]) ->
-        make_eexpr_of_ast typ_var typ_fun e >>= fun (a, t) ->
-        OK (Eunop (Eneg, a), t)
+            (Printf.sprintf "Wrong type argument to unary minus (have \'%s\')"
+               (string_of_typ t))
+    | Node (Taddrof, [ Node (Tindirection, [ e ]) ]) ->
+        (* special case: & and * cancel each other, neither one is evaluated (since C99) https://en.cppreference.com/w/c/language/operator_member_access#Address_of *)
+        make_eexpr_of_ast_params e
+    | Node (Tindirection, [ e ]) -> (
+        make_eexpr_of_ast_params e >>= fun (e, t) ->
+        match t with
+        | Tptr t' -> OK (Eload e, t')
+        | _ ->
+            Error
+              (Printf.sprintf
+                 "Invalid type argument of unary \'*\' (have \'%s\')"
+                 (string_of_typ t)))
+    | Node (Taddrof, [ e ]) ->
+        make_eexpr_of_ast_params e >>= fun (e, t) ->
+        (match e with
+        | Evar v -> (
+            match Hashtbl.find_option funvarinmem v with
+            | Some _ -> ()
+            | None ->
+                Hashtbl.add funvarinmem v !funstksz;
+                funstksz := !funstksz + size_of_type t)
+        | _ -> ());
+        OK (Eaddr e, Tptr t)
     | Node (Tint, [ IntLeaf i ]) -> OK (Eint i, Tint)
     | Node (Tchar, [ CharLeaf c ]) -> OK (Echar c, Tchar)
     | StringLeaf v -> (
@@ -106,7 +169,7 @@ let rec make_eexpr_of_ast (typ_var : (string, typ) Hashtbl.t)
             fname |> Printf.sprintf "Function \'%s\' is undeclared" |> fun x ->
             Error x
         | Some (expectedParamsT, t) ->
-            Utils.list_map_res (make_eexpr_of_ast typ_var typ_fun) params
+            Utils.list_map_res make_eexpr_of_ast_params params
             >>= fun paramsT ->
             if typ_compat_list (List.map snd paramsT) expectedParamsT then
               OK (Ecall (fname, List.map fst paramsT), t)
@@ -130,7 +193,15 @@ let rec make_eexpr_of_ast (typ_var : (string, typ) Hashtbl.t)
         (Format.sprintf "In make_eexpr_of_ast %s:\n%s" (string_of_ast a) msg)
 
 let rec make_einstr_of_ast (typ_var : (string, typ) Hashtbl.t)
-    (typ_fun : (string, typ list * typ) Hashtbl.t) (a : tree) : instr res =
+    (typ_fun : (string, typ list * typ) Hashtbl.t) (funrettype : typ)
+    (funvarinmem : (string, int) Hashtbl.t) (funstksz : int ref) (a : tree) :
+    instr res =
+  let make_einstr_of_ast_params =
+    make_einstr_of_ast typ_var typ_fun funrettype funvarinmem funstksz
+  in
+  let make_eexpr_of_ast_params =
+    make_eexpr_of_ast typ_var typ_fun funvarinmem funstksz
+  in
   let res =
     match a with
     | Node (Tdeclare, [ TypeLeaf t; StringLeaf v ]) -> (
@@ -139,28 +210,36 @@ let rec make_einstr_of_ast (typ_var : (string, typ) Hashtbl.t)
             Hashtbl.replace typ_var v t;
             OK (Iblock [])
         | Some et ->
-            v |> Printf.sprintf "Variable \'%s\' is already defined" |> fun x ->
-            Error x)
+            v |> Printf.sprintf "Redefinition of \'%s\'" |> fun x -> Error x)
     | Node (Tdeclare, [ TypeLeaf et; StringLeaf v; e ]) -> (
         match Hashtbl.find_option typ_var v with
         | None ->
             Hashtbl.replace typ_var v et;
-            make_eexpr_of_ast typ_var typ_fun e >>= fun (a, t) ->
+            make_eexpr_of_ast_params e >>= fun (a, t) ->
             if typCompat et t then OK (Iassign (v, a))
             else
               Printf.sprintf "Expected type [%s], got type [%s]"
                 (string_of_typ et) (string_of_typ t)
               |> fun x -> Error x
         | Some et ->
-            v |> Printf.sprintf "Variable \'%s\' is already defined" |> fun x ->
-            Error x)
+            v |> Printf.sprintf "Redefinition of \'%s\'" |> fun x -> Error x)
+    | Node (Tassign, [ Node (Tindirection, [ e1 ]); e2 ]) ->
+        make_eexpr_of_ast_params e1 >>= fun (e1, t) ->
+        (match t with
+        | Tptr _ -> OK ()
+        | _ ->
+            Printf.sprintf "Invalid type argument of unary \'*\' (have \'%s\')"
+              (string_of_typ t)
+            |> fun x -> Error x)
+        >>= fun () ->
+        make_eexpr_of_ast_params e2 >>= fun (e2, t) -> OK (Istore (e1, e2))
     | Node (Tassign, [ StringLeaf v; e ]) -> (
         match Hashtbl.find_option typ_var v with
         | None ->
             v |> Printf.sprintf "Variable \'%s\' is undeclared" |> fun x ->
             Error x
         | Some et ->
-            make_eexpr_of_ast typ_var typ_fun e >>= fun (a, t) ->
+            make_eexpr_of_ast_params e >>= fun (a, t) ->
             if typCompat et t then OK (Iassign (v, a))
             else
               Printf.sprintf "Expected type [%s], got type [%s]"
@@ -168,43 +247,48 @@ let rec make_einstr_of_ast (typ_var : (string, typ) Hashtbl.t)
               |> fun x -> Error x)
     | Node (Tif, [ e; i; NullLeaf ]) ->
         (* if without an else *)
-        make_eexpr_of_ast typ_var typ_fun e >>= fun (a, t) ->
+        make_eexpr_of_ast_params e >>= fun (a, t) ->
         if typCompat t Tint then
-          make_einstr_of_ast typ_var typ_fun i >>= fun j ->
-          OK (Iif (a, j, Iblock []))
+          make_einstr_of_ast_params i >>= fun j -> OK (Iif (a, j, Iblock []))
         else
           Printf.sprintf "Expected type [int], got type [%s]" (string_of_typ t)
           |> fun x -> Error x
     | Node (Tif, [ e; i1; i2 ]) ->
-        make_eexpr_of_ast typ_var typ_fun e >>= fun (a, t) ->
+        make_eexpr_of_ast_params e >>= fun (a, t) ->
         if typCompat t Tint then
-          make_einstr_of_ast typ_var typ_fun i1 >>= fun j1 ->
-          make_einstr_of_ast typ_var typ_fun i2 >>= fun j2 ->
-          OK (Iif (a, j1, j2))
+          make_einstr_of_ast_params i1 >>= fun j1 ->
+          make_einstr_of_ast_params i2 >>= fun j2 -> OK (Iif (a, j1, j2))
         else
           Printf.sprintf "Expected type [int], got type [%s]" (string_of_typ t)
           |> fun x -> Error x
     | Node (Twhile, [ e; i ]) ->
-        make_eexpr_of_ast typ_var typ_fun e >>= fun (a, t) ->
+        make_eexpr_of_ast_params e >>= fun (a, t) ->
         if typCompat t Tint then
-          make_einstr_of_ast typ_var typ_fun i >>= fun j -> OK (Iwhile (a, j))
+          make_einstr_of_ast_params i >>= fun j -> OK (Iwhile (a, j))
         else
           Printf.sprintf "Expected type [int], got type [%s]" (string_of_typ t)
           |> fun x -> Error x
     | Node (Treturn, [ e ]) ->
-        make_eexpr_of_ast typ_var typ_fun e >>= fun (a, t) -> OK (Ireturn a)
+        make_eexpr_of_ast_params e >>= fun (a, t) ->
+        if typCompat t funrettype then OK (Ireturn a)
+        else
+          Printf.sprintf
+            "incompatible types when returning type \'%s\' but \'%s\' was \
+             expected"
+            (string_of_typ t) (string_of_typ funrettype)
+          |> fun x -> Error x
     | Node (Tprint, [ e ]) ->
-        make_eexpr_of_ast typ_var typ_fun e >>= fun (a, _) -> OK (Iprint a)
+        make_eexpr_of_ast_params e >>= fun (a, _) -> OK (Iprint a)
     | Node (Tblock, instrs) ->
-        Utils.list_map_res (make_einstr_of_ast typ_var typ_fun) instrs
-        >>= fun instrs -> OK (Iblock instrs)
+        Utils.list_map_res make_einstr_of_ast_params instrs >>= fun instrs ->
+        OK (Iblock instrs)
     | Node (Tcall, [ StringLeaf fname; Node (Targs, params) ]) -> (
         match Hashtbl.find_option typ_fun fname with
         | None ->
             fname |> Printf.sprintf "Function \'%s\' is undeclared" |> fun x ->
             Error x
         | Some (expectedParamsT, t) ->
-            Utils.list_map_res (make_eexpr_of_ast typ_var typ_fun) params
+            Utils.list_map_res make_eexpr_of_ast_params params
             >>= fun paramsT ->
             if
               List.fold_left2
@@ -277,7 +361,10 @@ let make_fundef_of_ast (typ_fun : (string, typ list * typ) Hashtbl.t) (a : tree)
           |> fun x -> Error x)
       >>= fun () ->
       let typ_var = Hashtbl.of_list fargs in
-      make_einstr_of_ast typ_var typ_fun fbody >>= fun fbody ->
+      let funvarinmem = Hashtbl.create 1 in
+      let funstksz = ref 0 in
+      make_einstr_of_ast typ_var typ_fun t funvarinmem funstksz fbody
+      >>= fun fbody ->
       OK
         (Some
            ( fname,
@@ -286,6 +373,8 @@ let make_fundef_of_ast (typ_fun : (string, typ list * typ) Hashtbl.t) (a : tree)
                funbody = fbody;
                funvartyp = typ_var;
                funrettype = t;
+               funvarinmem;
+               funstksz = !funstksz;
              } ))
   | _ ->
       Error

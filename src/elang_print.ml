@@ -24,14 +24,13 @@ let rec dump_eexpr = function
   | Ebinop (b, e1, e2) ->
       Printf.sprintf "(%s %s %s)" (dump_eexpr e1) (dump_binop b) (dump_eexpr e2)
   | Eunop (u, e) -> Printf.sprintf "(%s %s)" (dump_unop u) (dump_eexpr e)
+  | Eload e -> Printf.sprintf "*%s" (dump_eexpr e)
+  | Eaddr e -> Printf.sprintf "&%s" (dump_eexpr e)
   | Eint i -> Printf.sprintf "%d" i
   | Evar s -> Printf.sprintf "%s" s
   | Echar c -> Printf.sprintf "%c" c
   | Ecall (fname, params) ->
-      List.fold_left
-        (fun acc param -> Printf.sprintf "%s, %s" acc (dump_eexpr param))
-        "" params
-      |> char_list_of_string |> safeTL |> string_of_char_list
+      params |> List.map dump_eexpr |> String.concat ", "
       |> Printf.sprintf "%s(%s)" fname
 
 let indent_size = 2
@@ -66,20 +65,21 @@ let rec dump_einstr_rec indent oc i =
       print_spaces oc indent;
       Format.fprintf oc "print %s;\n" (dump_eexpr e)
   | Icall (fname, params) ->
-      List.fold_left
-        (fun acc param -> Printf.sprintf "%s, %s" acc (dump_eexpr param))
-        "" params
-      |> char_list_of_string |> List.tl |> string_of_char_list
+      print_spaces oc indent;
+      params |> List.map dump_eexpr |> String.concat ", "
       |> Format.fprintf oc "%s(%s);\n" fname
+  | Istore (addr, v) ->
+      print_spaces oc indent;
+      Format.fprintf oc "*%s = %s;\n" (dump_eexpr addr) (dump_eexpr v)
 
 let dump_einstr oc i = dump_einstr_rec 0 oc i
 
 let dump_efun oc funname { funargs; funbody } =
-  Format.fprintf oc "%s(%s) {\n%a\n}\n" funname
+  Format.fprintf oc "%s(%s) %a\n" funname
     (funargs
     |> List.map (fun (name, my_type) ->
-           Printf.sprintf "%s %s" name (string_of_typ my_type))
-    |> String.concat ",")
+           Printf.sprintf "%s %s" (string_of_typ my_type) name)
+    |> String.concat ", ")
     dump_einstr funbody
 
 let dump_eprog oc = dump_prog dump_efun oc

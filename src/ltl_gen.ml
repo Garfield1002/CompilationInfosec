@@ -345,16 +345,16 @@ let ltl_instrs_of_linear_instr fname live_out allocation numspilled
         caller_save live_out allocation rargs >>= fun to_save ->
         let to_save = Set.to_list to_save in
         let save_regs_instructions, arg_saved, ofs =
-          save_caller_save to_save (-numspilled)
+          save_caller_save to_save (-numspilled - 1)
         in
         pass_parameters rargs allocation arg_saved
         >>= fun (parameter_passing_instuctions, npush) ->
         OK
           ((LComment "Saving a0-a7,t0-t6" :: save_regs_instructions)
-          @ LAddi (reg_sp, reg_sp, Archi.wordsize () * (ofs + 1))
+          @ LAddi (reg_sp, reg_s0, Archi.wordsize () * (ofs + 1))
             :: parameter_passing_instuctions
-          @ (LCall fname :: parameter_passing_instuctions)
-          @ [ LAddi (reg_sp, reg_sp, npush * Archi.wordsize ()) ]
+          @ [ LCall fname ]
+          @ [ LAddi (reg_sp, reg_s0, npush * Archi.wordsize ()) ]
           @ (LComment "Restoring a0-a7,t0-t6" :: restore_caller_save arg_saved)
           )
     | Rcall (Some rd, fname, rargs) ->
@@ -362,18 +362,18 @@ let ltl_instrs_of_linear_instr fname live_out allocation numspilled
         caller_save live_out allocation rargs >>= fun to_save ->
         let to_save = to_save |> Set.remove rd |> Set.to_list in
         let save_regs_instructions, arg_saved, ofs =
-          save_caller_save to_save (-numspilled)
+          save_caller_save to_save (-numspilled - 1)
         in
         pass_parameters rargs allocation arg_saved
         >>= fun (parameter_passing_instuctions, npush) ->
         OK
           ((LComment "Saving a0-a7,t0-t6" :: save_regs_instructions)
-          @ LAddi (reg_sp, reg_sp, Archi.wordsize () * (ofs + 1))
+          @ LAddi (reg_sp, reg_s0, Archi.wordsize () * (ofs + 1))
             :: parameter_passing_instuctions
           @ [ LCall fname ]
           @ (LMov (rd, reg_a0) :: ld)
-          @ parameter_passing_instuctions
-          @ [ LAddi (reg_sp, reg_sp, npush * Archi.wordsize ()) ]
+          (* @ parameter_passing_instuctions *)
+          @ [ LAddi (reg_sp, reg_s0, npush * Archi.wordsize ()) ]
           @ (LComment "Restoring a0-a7,t0-t6" :: restore_caller_save arg_saved)
           )
   in

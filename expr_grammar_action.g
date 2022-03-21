@@ -1,4 +1,4 @@
-tokens SYM_EOF SYM_IDENTIFIER<string> SYM_INTEGER<int> SYM_CHARACTER<char> SYM_PLUS SYM_MINUS SYM_ASTERISK SYM_DIV SYM_MOD
+tokens SYM_EOF SYM_IDENTIFIER<string> SYM_INTEGER<int> SYM_CHARACTER<char> SYM_PLUS SYM_MINUS SYM_ASTERISK SYM_DIV SYM_MOD SYM_AMPERSAND
 tokens SYM_LPARENTHESIS SYM_RPARENTHESIS SYM_LBRACE SYM_RBRACE
 tokens SYM_ASSIGN SYM_SEMICOLON SYM_RETURN SYM_IF SYM_WHILE SYM_ELSE SYM_COMMA SYM_PRINT
 tokens SYM_EQUALITY SYM_NOTEQ SYM_LT SYM_LEQ SYM_GT SYM_GEQ
@@ -14,6 +14,7 @@ non-terminals EQ_EXPRS EQ_EXPR
 non-terminals FUNCALL CALL_PARAMS CALL_REST_PARAMS
 non-terminals FUN_OR_VAR FUN_OR_ASS
 non-terminals TYPE CHAR ASSIGNMENT FUNDEF_DECL
+non-terminals TYPEPTR
 
 axiom S
 {
@@ -36,9 +37,12 @@ CHAR        -> SYM_CHARACTER                      { CharLeaf $1}
 
 INTEGER     -> SYM_INTEGER                        { IntLeaf $1 }
 
-TYPE        -> SYM_CHAR                           { TypeLeaf Tchar }
-TYPE        -> SYM_INT                            { TypeLeaf Tint  }
-TYPE        -> SYM_VOID                           { TypeLeaf Tvoid }
+TYPE        -> SYM_CHAR TYPEPTR                   { TypeLeaf ($2 Prog.Tchar) }
+TYPE        -> SYM_INT TYPEPTR                    { TypeLeaf ($2 Prog.Tint)  }
+TYPE        -> SYM_VOID TYPEPTR                   { TypeLeaf ($2 Prog.Tvoid) }
+
+TYPEPTR -> SYM_ASTERISK TYPEPTR                   { fun t -> $2 (Tptr t) }
+TYPEPTR ->                                        { identity }
 
 FUNCALL     -> SYM_LPARENTHESIS CALL_PARAMS SYM_RPARENTHESIS { fun identifier -> Node(Tcall, [identifier; Node(Targs, $2)])}
 
@@ -67,9 +71,9 @@ INSTR       -> SYM_WHILE SYM_LPARENTHESIS EXPR SYM_RPARENTHESIS INSTR   { Node (
 INSTR       -> SYM_RETURN EXPR SYM_SEMICOLON                            { Node (Treturn, [$2]) }
 INSTR       -> SYM_PRINT EXPR SYM_SEMICOLON                             { Node (Tprint, [$2]) }
 INSTR       -> BLOC                                                     { $1 }
-INSTR       -> SYM_CHAR IDENTIFIER ASSIGNMENT SYM_SEMICOLON             { Node (Tdeclare, TypeLeaf Tchar ::  $2 :: $3) }
-INSTR       -> SYM_INT  IDENTIFIER ASSIGNMENT SYM_SEMICOLON             { Node (Tdeclare, TypeLeaf Tint :: $2 :: $3) }
+INSTR       -> TYPE IDENTIFIER ASSIGNMENT SYM_SEMICOLON                 { Node (Tdeclare, $1 ::  $2 :: $3) }
 INSTR       -> IDENTIFIER FUN_OR_ASS                                    { $2 $1 }
+INSTR       -> SYM_ASTERISK EXPR SYM_ASSIGN EXPR SYM_SEMICOLON          { Node (Tassign, [Node (Tindirection, [$2]); $4]) }
 
 FUN_OR_ASS  -> SYM_ASSIGN EXPR SYM_SEMICOLON                            { fun identifier -> Node (Tassign, [identifier; $2])}
 FUN_OR_ASS  -> FUNCALL SYM_SEMICOLON                                    { $1 }
@@ -77,6 +81,8 @@ FUN_OR_ASS  -> FUNCALL SYM_SEMICOLON                                    { $1 }
 ASSIGNMENT  -> SYM_ASSIGN EXPR {[$2]}
 ASSIGNMENT  -> {[]}
 
+FUN_OR_VAR  -> FUNCALL                            { $1 }
+FUN_OR_VAR  ->                                    { identity }
 
 EXPR        -> EQ_EXPR EQ_EXPRS                   { resolve_associativity $1 $2 }
 
@@ -89,14 +95,13 @@ ADD_EXPR    -> MUL_EXPR MUL_EXPRS                 { resolve_associativity $1 $2 
 MUL_EXPR    -> FACTOR                             { $1 }
 MUL_EXPR    -> SYM_PLUS  FACTOR                   { $2 }
 MUL_EXPR    -> SYM_MINUS FACTOR                   { Node (Tneg, [$2]) }
+MUL_EXPR    -> SYM_AMPERSAND FACTOR               { Node (Taddrof, [$2]) }
+MUL_EXPR    -> SYM_ASTERISK FACTOR                { Node (Tindirection, [$2]) }
 
 FACTOR      -> CHAR                                   { Node (Tchar, [$1])}
 FACTOR      -> INTEGER                                { Node (Tint, [$1]) }
 FACTOR      -> SYM_LPARENTHESIS EXPR SYM_RPARENTHESIS { $2 }
 FACTOR      -> IDENTIFIER FUN_OR_VAR                  { $2 $1 }
-
-FUN_OR_VAR  -> FUNCALL                            { $1 }
-FUN_OR_VAR  ->                                    { identity }
 
 MUL_EXPRS   -> SYM_ASTERISK MUL_EXPR MUL_EXPRS    { Node (Tmul, [$2])::$3 }
 MUL_EXPRS   -> SYM_DIV MUL_EXPR MUL_EXPRS         { Node (Tdiv, [$2])::$3 }

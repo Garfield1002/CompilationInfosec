@@ -38,16 +38,27 @@ let find_function (ep : 'a prog) fname : 'a res =
   | Some (Gfun f) -> OK f
   | _ -> Error (Format.sprintf "Unknown function %s\n" fname)
 
-type typ = Tint | Tchar | Tvoid
+type typ = Tint | Tchar | Tvoid | Tptr of typ
 
-let string_of_typ t =
-  match t with Tint -> "int" | Tchar -> "char" | Tvoid -> "void"
+let rec string_of_typ t =
+  match t with
+  | Tint -> "int"
+  | Tchar -> "char"
+  | Tvoid -> "void"
+  | Tptr t -> t |> string_of_typ |> Printf.sprintf "%s*"
 
-let typCompat t1 t2 =
+let rec typCompat t1 t2 =
   match (t1, t2) with
   | _, _ when t1 = t2 -> true
+  | Tptr t1', Tptr t2' -> typCompat t1' t2'
+  | Tptr _, _ | _, Tptr _ -> false
   | Tvoid, _ | _, Tvoid -> false
   | _ -> true
+
+let isArithmetic = typCompat Tint
+
+let size_of_type (t : typ) : int =
+  match t with Tint -> 8 | Tchar | Tvoid -> 1 | Tptr _ -> 8
 
 let rec typ_compat_list l1 l2 =
   match (l1, l2) with

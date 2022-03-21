@@ -57,6 +57,8 @@ type tag =
   | Tcall
   | Tassignchar
   | Tchar
+  | Taddrof
+  | Tindirection
 
 type tree =
   | Node of tag * tree list
@@ -108,6 +110,8 @@ let string_of_tag = function
   | Tcall -> "Tcall"
   | Targs -> "Targs"
   | Tchar -> "Tchar"
+  | Taddrof -> "Taddrof"
+  | Tindirection -> "Tindirection"
 
 (* Écrit un fichier .dot qui correspond à un AST *)
 let rec draw_ast a next =
@@ -133,6 +137,8 @@ let rec draw_ast a next =
         [ Format.sprintf "n%d [label=\"%s\"]\n" next (string_of_typ t) ] )
   | IntLeaf i ->
       (next, next + 1, [ Format.sprintf "n%d [label=\"%d\"]\n" next i ])
+  | CharLeaf c ->
+      (next, next + 1, [ Format.sprintf "n%d [label=\"%c\"]\n" next c ])
   | NullLeaf ->
       (next, next + 1, [ Format.sprintf "n%d [label=\"null\"]\n" next ])
 
@@ -147,6 +153,7 @@ let rec string_of_ast a =
       Format.sprintf "Node(%s,%s)" (string_of_tag t)
         (String.concat ", " (List.map string_of_ast l))
   | StringLeaf s -> Format.sprintf "\"%s\"" s
+  | CharLeaf c -> Format.sprintf "\"%c\"" c
   | TypeLeaf t -> t |> string_of_typ |> Format.sprintf "\"%s\""
   | IntLeaf i -> Format.sprintf "%d" i
   | NullLeaf -> "null"

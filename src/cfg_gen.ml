@@ -18,7 +18,9 @@ let rec cfg_expr_of_eexpr (e : Elang.expr) : expr res =
   | Elang.Ebinop (b, e1, e2) ->
       cfg_expr_of_eexpr e1 >>= fun ee1 ->
       cfg_expr_of_eexpr e2 >>= fun ee2 -> OK (Ebinop (b, ee1, ee2))
-  | Elang.Eunop (u, e) -> cfg_expr_of_eexpr e >>= fun ee -> OK (Eunop (u, ee))
+  | Elang.Eunop (u, e) -> cfg_expr_of_eexpr e >>= fun e -> OK (Eunop (u, e))
+  | Elang.Eaddr e -> OK (Estk 1)
+  | Elang.Eload e -> cfg_expr_of_eexpr e >>= fun e -> OK (Eload (e, 1))
   | Elang.Eint i -> OK (Eint i)
   | Elang.Echar c -> OK (Eint (int_of_char c))
   | Elang.Evar v -> OK (Evar v)
@@ -78,6 +80,11 @@ let rec cfg_node_of_einstr (next : int) (cfg : (int, cfg_node) Hashtbl.t)
       Utils.list_map_res cfg_expr_of_eexpr params >>= fun params ->
       Hashtbl.replace cfg next (Ccall (fname, params, succ));
       OK (next, next + 1)
+  | Elang.Istore (addr, v) ->
+      cfg_expr_of_eexpr addr >>= fun addr ->
+      cfg_expr_of_eexpr v >>= fun v ->
+      Hashtbl.replace cfg next (Cstore (addr, v, 1, succ));
+      OK (next, next + 1)
 
 (* Some nodes may be unreachable after the CFG is entirely generated. The
    [reachable_nodes n cfg] constructs the set of node identifiers that are
@@ -92,6 +99,7 @@ let rec reachable_nodes n (cfg : (int, cfg_node) Hashtbl.t) =
       | Some (Cnop succ)
       | Some (Cprint (_, succ))
       | Some (Cassign (_, _, succ))
+      | Some (Cstore (_, _, _, succ))
       | Some (Ccall (_, _, succ)) ->
           reachable_aux succ reach
       | Some (Creturn _) -> reach
@@ -100,14 +108,21 @@ let rec reachable_nodes n (cfg : (int, cfg_node) Hashtbl.t) =
   reachable_aux n Set.empty
 
 (* [cfg_fun_of_efun f] builds the CFG for E function [f]. *)
-let cfg_fun_of_efun { funargs; funbody } =
+let cfg_fun_of_efun
+    ({ funargs; funvartyp; funvarinmem; funbody; funstksz } : Elang.efun) =
   let cfg = Hashtbl.create 17 in
   Hashtbl.replace cfg 0 (Creturn (Eint 0));
   cfg_node_of_einstr 1 cfg 0 funbody >>= fun (node, _) ->
   (* remove unreachable nodes *)
   let r = reachable_nodes node cfg in
   Hashtbl.filteri_inplace (fun k _ -> Set.mem k r) cfg;
-  OK { cfgfunargs = List.map fst funargs; cfgfunbody = cfg; cfgentry = node }
+  OK
+    {
+      cfgfunargs = List.map fst funargs;
+      cfgfunbody = cfg;
+      cfgentry = node;
+      cfgfunstksz = funstksz;
+    }
 
 let cfg_gdef_of_edef gd =
   match gd with Gfun f -> cfg_fun_of_efun f >>= fun f -> OK (Gfun f)
