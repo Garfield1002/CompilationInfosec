@@ -21,10 +21,10 @@ let dump_unop = function Eneg -> Printf.sprintf "-"
 let safeTL l = match l with [] -> [] | _ :: t -> t
 
 let rec dump_eexpr = function
-  | Ebinop (b, e1, e2) ->
+  | Ebinop (b, (e1, _), (e2, _)) ->
       Printf.sprintf "(%s %s %s)" (dump_eexpr e1) (dump_binop b) (dump_eexpr e2)
   | Eunop (u, e) -> Printf.sprintf "(%s %s)" (dump_unop u) (dump_eexpr e)
-  | Eload e -> Printf.sprintf "*%s" (dump_eexpr e)
+  | Eload (e, _) -> Printf.sprintf "*%s" (dump_eexpr e)
   | Eaddr e -> Printf.sprintf "&%s" (dump_eexpr e)
   | Eint i -> Printf.sprintf "%d" i
   | Evar s -> Printf.sprintf "%s" s
@@ -68,7 +68,7 @@ let rec dump_einstr_rec indent oc i =
       print_spaces oc indent;
       params |> List.map dump_eexpr |> String.concat ", "
       |> Format.fprintf oc "%s(%s);\n" fname
-  | Istore (addr, v) ->
+  | Istore (addr, v, _) ->
       print_spaces oc indent;
       Format.fprintf oc "*%s = %s;\n" (dump_eexpr addr) (dump_eexpr v)
 

@@ -21,14 +21,14 @@ type binop =
 type unop = Eneg
 
 type expr =
-  | Ebinop of binop * expr * expr
+  | Ebinop of binop * (expr * typ) * (expr * typ)
   | Eunop of unop * expr
   | Eint of int
   | Evar of string
   | Ecall of string * expr list
   | Echar of char
   | Eaddr of expr
-  | Eload of expr
+  | Eload of expr * typ
 
 type texpr = typ * expr
 
@@ -40,7 +40,7 @@ type instr =
   | Ireturn of expr
   | Iprint of expr
   | Icall of string * expr list
-  | Istore of expr * expr
+  | Istore of expr * expr * typ
 
 type efun = {
   funargs : (string * typ) list;

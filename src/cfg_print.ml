@@ -12,12 +12,18 @@ let rec dump_cfgexpr : expr -> string = function
   | Eint i -> Format.sprintf "%d" i
   | Evar s -> Format.sprintf "%s" s
   | Ecall (fname, params) -> Format.sprintf "%s()" fname
+  | Eload (e, sz) -> Format.sprintf "load(%s, %d)" (dump_cfgexpr e) sz
+  | Estk i -> Format.sprintf "addr%d" i
 
 let dump_list_cfgexpr l = l |> List.map dump_cfgexpr |> String.concat ", "
 
 let dump_arrows oc fname n (node : cfg_node) =
   match node with
-  | Cassign (_, _, succ) | Cprint (_, succ) | Ccall (_, _, succ) | Cnop succ ->
+  | Cassign (_, _, succ)
+  | Cprint (_, succ)
+  | Ccall (_, _, succ)
+  | Cstore (_, _, _, succ)
+  | Cnop succ ->
       Format.fprintf oc "n_%s_%d -> n_%s_%d\n" fname n fname succ
   | Creturn _ -> ()
   | Ccmp (_, succ1, succ2) ->
@@ -28,12 +34,16 @@ let dump_arrows oc fname n (node : cfg_node) =
 
 let dump_cfg_node oc (node : cfg_node) =
   match node with
+  | Cstore (e1, e2, sz, _) ->
+      Format.fprintf oc "*(%s,%d) = %s" (dump_cfgexpr e1) sz (dump_cfgexpr e2)
   | Cassign (v, e, _) -> Format.fprintf oc "%s = %s" v (dump_cfgexpr e)
   | Cprint (e, _) -> Format.fprintf oc "print %s" (dump_cfgexpr e)
   | Creturn e -> Format.fprintf oc "return %s" (dump_cfgexpr e)
   | Ccmp (e, _, _) -> Format.fprintf oc "%s" (dump_cfgexpr e)
   | Cnop _ -> Format.fprintf oc "nop"
-  | Ccall (fname, params, _) -> Format.fprintf oc "%s()" fname
+  | Ccall (fname, params, _) ->
+      params |> List.map dump_cfgexpr |> String.concat ", "
+      |> Format.fprintf oc "%s(%s)" fname
 
 let dump_liveness_state oc ht state =
   Hashtbl.iter

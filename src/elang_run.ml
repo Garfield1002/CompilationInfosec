@@ -35,13 +35,13 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
   (* [eval_eexpr st e] évalue l'expression [e] dans l'état [st]. Renvoie une
      erreur si besoin. *)
   let rec eval_eexpr st funvarinmem (typ_var : (string, typ) Hashtbl.t)
-      (typ_fun : (string, typ list * typ) Hashtbl.t) (sp : int) (sp_ofset : int)
-      (e : expr) : (int * typ) res =
+      (typ_fun : (string, typ list * typ) Hashtbl.t) (sp : int)
+      (sp_offset : int) (e : expr) : (int * typ) res =
     let eval_eexpr_params =
-      eval_eexpr st funvarinmem typ_var typ_fun sp sp_ofset
+      eval_eexpr st funvarinmem typ_var typ_fun sp sp_offset
     in
     match e with
-    | Ebinop (binop, a, b) -> (
+    | Ebinop (binop, (a, _), (b, _)) -> (
         eval_eexpr_params a >>= fun (a, t1) ->
         eval_eexpr_params b >>= fun (b, t2) ->
         match (binop, a, b, t1, t2) with
@@ -60,7 +60,7 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
           Error (Printf.sprintf "\'%s\' undeclared" v)
         else OK (sp + Option.get opt, Tptr (Option.get t))
     | Eaddr _ -> Error "Not implemented"
-    | Eload e -> (
+    | Eload (e, _) -> (
         eval_eexpr_params e >>= fun (i, t) ->
         match t with
         | Tptr p ->
@@ -99,7 +99,7 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
         (let opt = Hashtbl.find_option typ_fun fname in
          match opt with Some (_, t) -> OK t | None -> Error "No type")
         >>= fun t ->
-        eval_efun oc st sp_ofset typ_fun f fname params >>= fun (v, st) ->
+        eval_efun oc st sp_offset typ_fun f fname params >>= fun (v, st) ->
         match v with None -> Error "No output" | Some ret -> OK (ret, t))
   (* [eval_einstr oc st ins] évalue l'instrution [ins] en partant de l'état [st].
 
@@ -115,16 +115,16 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
      - [st'] est l'état mis à jour. *)
   and eval_einstr oc (st : int state) funvarinmem fname
       (typ_var : (string, typ) Hashtbl.t)
-      (typ_fun : (string, typ list * typ) Hashtbl.t) (sp : int) (sp_ofset : int)
-      (ins : instr) : (int option * int state) res =
+      (typ_fun : (string, typ list * typ) Hashtbl.t) (sp : int)
+      (sp_offset : int) (ins : instr) : (int option * int state) res =
     let eval_einstr_params =
-      eval_einstr oc st funvarinmem fname typ_var typ_fun sp sp_ofset
+      eval_einstr oc st funvarinmem fname typ_var typ_fun sp sp_offset
     in
     let eval_eexpr_params =
-      eval_eexpr st funvarinmem typ_var typ_fun sp sp_ofset
+      eval_eexpr st funvarinmem typ_var typ_fun sp sp_offset
     in
     match ins with
-    | Istore (addr, v) ->
+    | Istore (addr, v, _) ->
         eval_eexpr_params addr >>= fun (addr, t) ->
         (match t with
         | Tptr p -> OK p
@@ -174,7 +174,7 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
         Utils.list_map_res eval_eexpr_params params >>= fun params ->
         let params = List.map fst params in
         find_function ep fname >>= fun f ->
-        eval_efun oc st sp_ofset typ_fun f fname params >>= fun (_, st) ->
+        eval_efun oc st sp_offset typ_fun f fname params >>= fun (_, st) ->
         OK (None, st)
   (* [eval_efun oc st f fname vargs] évalue la fonction [f] (dont le nom est
      [fname]) en partant de l'état [st], avec les arguments [vargs].

@@ -113,13 +113,13 @@ let rec make_eexpr_of_ast (typ_var : (string, typ) Hashtbl.t)
         make_eexpr_of_ast_params e2 >>= fun (a2, t2) ->
         match (t, t1, t2) with
         | Tadd, Tptr p, _ when isArithmetic t2 ->
-            OK (Ebinop (Eadd, a1, a2), Tptr p)
+            OK (Ebinop (Eadd, (a1, t1), (a2, t2)), Tptr p)
         | Tadd, _, Tptr p when isArithmetic t1 ->
-            OK (Ebinop (Eadd, a1, a2), Tptr p)
+            OK (Ebinop (Eadd, (a1, t1), (a2, t2)), Tptr p)
         | Tsub, Tptr p, _ when isArithmetic t2 ->
-            OK (Ebinop (Esub, a1, a2), Tptr p)
+            OK (Ebinop (Esub, (a1, t1), (a2, t2)), Tptr p)
         | _, _, _ when isArithmetic t1 && isArithmetic t2 ->
-            OK (Ebinop (binop_of_tag t, a1, a2), t1)
+            OK (Ebinop (binop_of_tag t, (a1, t1), (a2, t2)), t1)
         | _, _, _ ->
             Error
               (Printf.sprintf
@@ -138,7 +138,7 @@ let rec make_eexpr_of_ast (typ_var : (string, typ) Hashtbl.t)
     | Node (Tindirection, [ e ]) -> (
         make_eexpr_of_ast_params e >>= fun (e, t) ->
         match t with
-        | Tptr t' -> OK (Eload e, t')
+        | Tptr t' -> OK (Eload (e, t'), t')
         | _ ->
             Error
               (Printf.sprintf
@@ -232,7 +232,7 @@ let rec make_einstr_of_ast (typ_var : (string, typ) Hashtbl.t)
               (string_of_typ t)
             |> fun x -> Error x)
         >>= fun () ->
-        make_eexpr_of_ast_params e2 >>= fun (e2, t) -> OK (Istore (e1, e2))
+        make_eexpr_of_ast_params e2 >>= fun (e2, t) -> OK (Istore (e1, e2, t))
     | Node (Tassign, [ StringLeaf v; e ]) -> (
         match Hashtbl.find_option typ_var v with
         | None ->

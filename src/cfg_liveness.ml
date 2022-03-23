@@ -11,6 +11,8 @@ let rec vars_in_expr (e : expr) =
   | Ebinop (_, e1, e2) -> Set.union (vars_in_expr e1) (vars_in_expr e2)
   | Eunop (_, e) -> vars_in_expr e
   | Eint _ -> Set.empty
+  | Estk _ -> Set.empty
+  | Eload (e, _) -> vars_in_expr e
   | Evar s -> Set.singleton s
   | Ecall (_, params) ->
       List.map vars_in_expr params |> List.fold Set.union Set.empty
@@ -21,6 +23,8 @@ let rec vars_in_expr (e : expr) =
 let live_cfg_node (node : cfg_node) (live_after : string Set.t) =
   match node with
   | Cassign (s, e, _) -> Set.union (vars_in_expr e) (Set.remove s live_after)
+  | Cstore (e1, e2, _, _) ->
+      List.fold Set.union live_after [ vars_in_expr e1; vars_in_expr e2 ]
   | Creturn e -> Set.union (vars_in_expr e) live_after
   | Cprint (e, _) -> Set.union (vars_in_expr e) live_after
   | Ccmp (e, _, _) -> Set.union (vars_in_expr e) live_after
