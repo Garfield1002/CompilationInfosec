@@ -9,13 +9,16 @@ let gen_live (i : rtl_instr) =
   match i with
   | Rbinop (_, _, rs1, rs2) -> Set.of_list [ rs1; rs2 ]
   | Rprint rs | Runop (_, _, rs) -> Set.singleton rs
-  | Rconst (_, _) -> Set.empty
+  | Rconst _ -> Set.empty
   | Rbranch (_, rs1, rs2, _) -> Set.of_list [ rs1; rs2 ]
   | Rjmp _ -> Set.empty
   | Rmov (_, rs) -> Set.singleton rs
   | Rret rs -> Set.singleton rs
   | Rlabel _ -> Set.empty
   | Rcall (_, _, params) -> Set.of_list params
+  | Rstore (rd, rs, _) -> Set.of_list [ rd; rs ]
+  | Rload (_, rs, _) -> Set.singleton rs
+  | Rstk _ -> Set.empty
 
 let kill_live (i : rtl_instr) =
   match i with
@@ -23,10 +26,11 @@ let kill_live (i : rtl_instr) =
   | Runop (_, rd, _)
   | Rconst (rd, _)
   | Rmov (rd, _)
+  | Rstk (rd, _)
+  | Rload (rd, _, _)
   | Rcall (Some rd, _, _) ->
       Set.singleton rd
-  | Rbranch (_, _, _, _)
-  | Rprint _ | Rret _ | Rjmp _ | Rlabel _
+  | Rstore _ | Rbranch _ | Rprint _ | Rret _ | Rjmp _ | Rlabel _
   | Rcall (None, _, _) ->
       Set.empty
 

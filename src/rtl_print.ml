@@ -48,7 +48,12 @@ let dump_rtl_instr name (live_in, live_out) oc (i : rtl_instr) =
            (fun acc reg -> print_reg reg |> Format.sprintf "%s, %s" acc)
            ""
       |> Format.fprintf oc "%s <- call %s%s" (print_reg rd) fname
-  | Rcall (None, fname, params) -> Format.fprintf oc "call %s" fname);
+  | Rcall (None, fname, params) -> Format.fprintf oc "call %s" fname
+  | Rload (rd, rs, sz) ->
+      Format.fprintf oc "load %s %s(%d)" (print_reg rd) (print_reg rd) sz
+  | Rstk (rd, addr) -> Format.fprintf oc "%s<-0x%.8X" (print_reg rd) addr
+  | Rstore (rd, rs, sz) ->
+      Format.fprintf oc "store %s(%d) %s" (print_reg rd) sz (print_reg rs));
   Format.fprintf oc "\n";
   dump_liveness live_out "after"
 

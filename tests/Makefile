@@ -4,7 +4,7 @@
 # FILES := $(if $(DIR),$(DIR),basic/*.e funcall/*.e type_basic/*.e type_funcall/*.e char/*.e)
 FILES := $(if $(DIR),$(DIR),type_basic/*.e type_funcall/*.e char/*.e ptr/*.e)
 
-OPTS := $(if $(OPTS), $(OPTS),)
+OPTS := $(if $(OPTS), $(OPTS), -clever-regalloc)
 
 .PHONY: all
 all: ../main.native

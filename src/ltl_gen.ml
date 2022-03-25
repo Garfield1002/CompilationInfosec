@@ -232,20 +232,22 @@ let written_rtl_regs_instr (i : rtl_instr) =
   | Runop (_, rd, _)
   | Rconst (rd, _)
   | Rmov (rd, _)
+  | Rstk (rd, _)
+  | Rload (rd, _, _)
   | Rcall (Some rd, _, _) ->
       Set.singleton rd
-  | Rprint _ | Rret _ | Rlabel _
-  | Rbranch (_, _, _, _)
+  | Rprint _ | Rret _ | Rlabel _ | Rstore _ | Rbranch _
   | Rcall (None, _, _)
   | Rjmp _ ->
       Set.empty
 
 let read_rtl_regs_instr (i : rtl_instr) =
   match i with
-  | Rbinop (_, _, rs1, rs2) | Rbranch (_, rs1, rs2, _) ->
+  | Rstore (rs1, rs2, _) | Rbinop (_, _, rs1, rs2) | Rbranch (_, rs1, rs2, _) ->
       Set.of_list [ rs1; rs2 ]
-  | Rprint rs | Runop (_, _, rs) | Rmov (_, rs) | Rret rs -> Set.singleton rs
-  | Rlabel _ | Rconst (_, _) | Rjmp _ -> Set.empty
+  | Rload (_, rs, _) | Rprint rs | Runop (_, _, rs) | Rmov (_, rs) | Rret rs ->
+      Set.singleton rs
+  | Rlabel _ | Rconst _ | Rjmp _ | Rstk _ -> Set.empty
   | Rcall (_, _, params) -> Set.of_list params
 
 let read_rtl_regs (l : rtl_instr list) =
@@ -293,7 +295,7 @@ let caller_save live_out allocation rargs =
    then we don't need its value to be preserved across function calls.) These
    registers are saved at [fp - 8 * (curstackslot + 1)] *)
 let ltl_instrs_of_linear_instr fname live_out allocation numspilled
-    epilogue_label ins =
+    epilogue_label (numlocals : int) ins =
   let res =
     match ins with
     | Rbinop (b, rd, rs1, rs2) ->
@@ -308,6 +310,17 @@ let ltl_instrs_of_linear_instr fname live_out allocation numspilled
     | Rconst (rd, i) ->
         store_loc reg_tmp1 allocation rd >>= fun (ld, rd) ->
         OK (LConst (rd, i) :: ld)
+    | Rstk (rd, addr) ->
+        store_loc reg_tmp1 allocation rd >>= fun (ld, rd) ->
+        OK (LAddi (rd, reg_sp, addr) :: ld)
+    | Rstore (rd, rs, sz) ->
+        load_loc reg_tmp1 allocation rd >>= fun (l1, rd) ->
+        load_loc reg_tmp2 allocation rs >>= fun (l2, rs) ->
+        mas_of_size sz >>= fun sz -> OK (l1 @ l2 @ [ LStore (rd, 0, rs, sz) ])
+    | Rload (rd, rs, sz) ->
+        store_loc reg_tmp1 allocation rd >>= fun (l1, rd) ->
+        load_loc reg_tmp2 allocation rs >>= fun (l2, rs) ->
+        mas_of_size sz >>= fun sz -> OK (l1 @ l2 @ [ LLoad (rd, rs, 0, sz) ])
     | Rbranch (cmp, rs1, rs2, s1) ->
         load_loc reg_tmp1 allocation rs1 >>= fun (l1, r1) ->
         load_loc reg_tmp2 allocation rs2 >>= fun (l2, r2) ->
@@ -341,41 +354,43 @@ let ltl_instrs_of_linear_instr fname live_out allocation numspilled
         load_loc reg_tmp1 allocation r >>= fun (l, r) ->
         OK (l @ [ LMov (reg_ret, r); LJmp epilogue_label ])
     | Rlabel l -> OK [ LLabel (Format.sprintf "%s_%d" fname l) ]
-    | Rcall (None, fname, rargs) ->
+    | Rcall (rd, fname, rargs) ->
+        let saveOutput = Option.is_some rd in
+        (if saveOutput then store_loc reg_tmp1 allocation (Option.get rd)
+        else OK ([], -1))
+        >>= fun (ld, rd) ->
         caller_save live_out allocation rargs >>= fun to_save ->
-        let to_save = Set.to_list to_save in
+        let to_save =
+          to_save
+          |> (if saveOutput then Set.remove rd else identity)
+          |> Set.to_list
+        in
+        let saveOutputInstructions =
+          if saveOutput then LMov (rd, reg_a0) :: ld else []
+        in
+        let nSpillLocal = numspilled + numlocals in
         let save_regs_instructions, arg_saved, ofs =
-          save_caller_save to_save (-numspilled - 1)
+          save_caller_save to_save (-nSpillLocal - 1)
+          (* We want the first FREE slot *)
         in
         pass_parameters rargs allocation arg_saved
         >>= fun (parameter_passing_instuctions, npush) ->
         OK
           ((LComment "Saving a0-a7,t0-t6" :: save_regs_instructions)
-          @ LAddi (reg_sp, reg_s0, Archi.wordsize () * (ofs + 1))
-            :: parameter_passing_instuctions
+          @ LAddi (reg_sp, reg_fp, Archi.wordsize () * ofs)
+            :: LComment "Passing Params" :: parameter_passing_instuctions
+          (* Takes care of sp *)
           @ [ LCall fname ]
-          @ [ LAddi (reg_sp, reg_s0, npush * Archi.wordsize ()) ]
+          @ [
+              LComment "Moving sp before the arguments";
+              LAddi (reg_sp, reg_sp, npush * Archi.wordsize ());
+            ]
+          @ saveOutputInstructions
           @ (LComment "Restoring a0-a7,t0-t6" :: restore_caller_save arg_saved)
-          )
-    | Rcall (Some rd, fname, rargs) ->
-        store_loc reg_tmp1 allocation rd >>= fun (ld, rd) ->
-        caller_save live_out allocation rargs >>= fun to_save ->
-        let to_save = to_save |> Set.remove rd |> Set.to_list in
-        let save_regs_instructions, arg_saved, ofs =
-          save_caller_save to_save (-numspilled - 1)
-        in
-        pass_parameters rargs allocation arg_saved
-        >>= fun (parameter_passing_instuctions, npush) ->
-        OK
-          ((LComment "Saving a0-a7,t0-t6" :: save_regs_instructions)
-          @ LAddi (reg_sp, reg_s0, Archi.wordsize () * (ofs + 1))
-            :: parameter_passing_instuctions
-          @ [ LCall fname ]
-          @ (LMov (rd, reg_a0) :: ld)
-          (* @ parameter_passing_instuctions *)
-          @ [ LAddi (reg_sp, reg_s0, npush * Archi.wordsize ()) ]
-          @ (LComment "Restoring a0-a7,t0-t6" :: restore_caller_save arg_saved)
-          )
+          @ [
+              LComment "Restoring sp";
+              LAddi (reg_sp, reg_sp, (-ofs - nSpillLocal) * Archi.wordsize ());
+            ])
   in
   res >>= fun l ->
   OK
@@ -403,11 +418,14 @@ let retrieve_nth_arg n numcalleesave =
    the value stored in s0 (fp), restore all the callee-save registers and jumps
    back to [ra]. *)
 let ltl_fun_of_linear_fun linprog
-    ({ linearfunargs; linearfunbody; linearfuninfo } : linear_fun) fname
-    (live_in, live_out) (allocation, numspilled) =
+    ({ linearfunargs; linearfunbody; linearfuninfo; linearfunstksz } :
+      linear_fun) fname (live_in, live_out) (allocation, numspilled) =
   List.iteri
     (fun i pr -> Hashtbl.replace allocation pr (retrieve_nth_arg i 0))
     linearfunargs;
+  let numlocals =
+    Float.to_int (ceil (float linearfunstksz /. float (Archi.wordsize ())))
+  in
   let written_regs =
     Set.add reg_ra
       (Set.add reg_fp (written_ltl_regs fname linearfunbody allocation))
@@ -429,7 +447,8 @@ let ltl_fun_of_linear_fun linprog
   let epilogue_label = Format.sprintf "%s_%d" fname (max_label + 1) in
   let prologue =
     List.concat (List.map make_push (Set.to_list callee_saved_regs))
-    @ (LMov (reg_fp, reg_sp) :: make_sp_sub (numspilled * Archi.wordsize ()))
+    @ LMov (reg_fp, reg_sp)
+      :: make_sp_sub ((numlocals + numspilled) * Archi.wordsize ())
     @ [ LComment "end prologue" ]
   in
   let epilogue =
@@ -443,7 +462,7 @@ let ltl_fun_of_linear_fun linprog
     (fun i ->
       ltl_instrs_of_linear_instr fname
         (Hashtbl.find_default live_out i Set.empty)
-        allocation numspilled epilogue_label)
+        allocation numspilled epilogue_label numlocals)
     linearfunbody
   >>= fun l ->
   let instrs = List.concat l in

@@ -77,6 +77,12 @@ let rec rtl_instrs_of_cfg_expr (next_reg, var2reg) (e : expr) =
         Rcall (Some next_reg, fname, List.rev rs) :: ls,
         next_reg + 1,
         var2reg )
+  | Estk addr -> (next_reg, [ Rstk (next_reg, addr) ], next_reg + 1, var2reg)
+  | Eload (e, sz) ->
+      let rs, l, next_reg, var2reg =
+        rtl_instrs_of_cfg_expr (next_reg, var2reg) e
+      in
+      (next_reg, Rload (next_reg, rs, sz) :: l, next_reg + 1, var2reg)
 
 let is_cmp_op = function
   | Eclt -> Some Rclt
@@ -114,11 +120,11 @@ let rtl_instrs_of_cfg_node ((next_reg : int), (var2reg : (string * int) list))
         rtl_instrs_of_cfg_expr (next_reg, var2reg) e
       in
       (Rret r :: l, next_reg, var2reg)
-  | Cprint (e, i) ->
+  | Cprint (e, next) ->
       let r, l, next_reg, var2reg =
         rtl_instrs_of_cfg_expr (next_reg, var2reg) e
       in
-      (Rjmp i :: Rprint r :: l, next_reg, var2reg)
+      (Rjmp next :: Rprint r :: l, next_reg, var2reg)
   | Ccmp (e, i1, i2) ->
       let rtl_cmp, e1, e2 = rtl_cmp_of_cfg_expr e in
       let r1, l1, next_reg, var2reg =
@@ -140,9 +146,17 @@ let rtl_instrs_of_cfg_node ((next_reg : int), (var2reg : (string * int) list))
         List.fold_left f ([], [], next_reg, var2reg) params
       in
       (Rjmp next :: Rcall (None, fname, List.rev rs) :: ls, next_reg, var2reg)
+  | Cstore (addr, e, sz, next) ->
+      let rd, l1, next_reg, var2reg =
+        rtl_instrs_of_cfg_expr (next_reg, var2reg) addr
+      in
+      let rs, l2, next_reg, var2reg =
+        rtl_instrs_of_cfg_expr (next_reg, var2reg) e
+      in
+      ((Rjmp next :: Rstore (rd, rs, sz) :: l2) @ l1, next_reg, var2reg)
 
 let rtl_instrs_of_cfg_fun cfgfunname
-    ({ cfgfunargs; cfgfunbody; cfgentry } : cfg_fun) =
+    ({ cfgfunargs; cfgfunbody; cfgentry; cfgfunstksz } : cfg_fun) =
   let rargs, next_reg, var2reg =
     List.fold_left
       (fun (rargs, next_reg, var2reg) a ->
@@ -166,6 +180,7 @@ let rtl_instrs_of_cfg_fun cfgfunname
     rtlfunentry = cfgentry;
     rtlfunbody;
     rtlfuninfo = var2reg;
+    rtlfunstksz = cfgfunstksz;
   }
 
 let rtl_of_gdef funname = function
