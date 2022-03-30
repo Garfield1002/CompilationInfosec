@@ -38,27 +38,59 @@ let find_function (ep : 'a prog) fname : 'a res =
   | Some (Gfun f) -> OK f
   | _ -> Error (Format.sprintf "Unknown function %s\n" fname)
 
-type typ = Tint | Tchar | Tvoid | Tptr of typ
+type typ = Tint | Tchar | Tvoid | Tptr of typ | Tstruct of string
 
 let rec string_of_typ t =
   match t with
   | Tint -> "int"
   | Tchar -> "char"
   | Tvoid -> "void"
+  | Tstruct s -> Printf.sprintf "struct %s" s
   | Tptr t -> t |> string_of_typ |> Printf.sprintf "%s*"
 
 let rec typCompat t1 t2 =
   match (t1, t2) with
   | _, _ when t1 = t2 -> true
-  | Tptr t1', Tptr t2' -> typCompat t1' t2'
   | Tptr _, _ | _, Tptr _ -> false
+  | Tstruct _, _ | _, Tstruct _ -> false
   | Tvoid, _ | _, Tvoid -> false
   | _ -> true
 
 let isArithmetic = typCompat Tint
 
-let size_of_type (t : typ) : int =
-  match t with Tint -> 8 | Tchar | Tvoid -> 1 | Tptr _ -> 8
+let rec size_of_type (structs : (string, (string * typ) list) Hashtbl.t)
+    (t : typ) : int =
+  match t with
+  | Tchar | Tvoid -> 1
+  | Tint | Tptr _ -> size_of_mas (archi_mas ())
+  | Tstruct s -> (
+      let opt = Hashtbl.find_option structs s in
+      match opt with
+      | Some l ->
+          List.fold_left (fun acc (_, t) -> size_of_type structs t + acc) 0 l
+      | None -> failwith "Undefinned structure")
+
+let rec field_offset (structs : (string, (string * typ) list) Hashtbl.t)
+    (s : string) (f : string) : int res =
+  let rec foo l =
+    match l with
+    | [] -> Error (Printf.sprintf "\'%s\' has no member named \'%s\'" s f)
+    | (h, _) :: t when h = f -> OK 0
+    | (_, h) :: t -> foo t >>= fun acc -> OK (acc + size_of_type structs h)
+  in
+  let opt = Hashtbl.find_option structs s in
+  match opt with Some l -> foo l | None -> Error "Undefined structure"
+
+let rec field_type (structs : (string, (string * typ) list) Hashtbl.t)
+    (s : string) (f : string) : typ res =
+  let opt = Hashtbl.find_option structs s in
+  match opt with
+  | Some l -> (
+      let opt = List.find_opt (fun (name, _) -> name = f) l in
+      match opt with
+      | Some (_, t) -> OK t
+      | None -> Error (Printf.sprintf "\'%s\' has no member named \'%s\'" s f))
+  | None -> Error "Undefined structure"
 
 let rec typ_compat_list l1 l2 =
   match (l1, l2) with

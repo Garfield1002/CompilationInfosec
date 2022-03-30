@@ -1,29 +1,24 @@
 #include <stdio.h>
 
-struct s
+struct b
 {
-    struct z;
-
-    int x;
-    int y;
+    int a;
 };
 
-void f(int *z, int x, int y)
+struct c
 {
-    *z = x + y;
-}
+    struct b B;
+};
 
 int main()
 {
+    struct c C;
 
-    char c = 'a' + 1;
+    int a = 2;
 
-    int x = 14;
-    int y = 12;
-    int z = 3;
-    f(&z, x, y);
+    C.b = 5;
 
-    printf("%d\n", z);
+    C.B.a = 1;
 
-    return z;
+    return 0;
 }

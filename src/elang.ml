@@ -29,6 +29,7 @@ type expr =
   | Echar of char
   | Eaddr of expr
   | Eload of expr * typ
+  | Egetfield of expr * string * string
 
 type texpr = typ * expr
 
@@ -41,6 +42,7 @@ type instr =
   | Iprint of expr
   | Icall of string * expr list
   | Istore of expr * expr * typ
+  | Isetfield of expr * string * expr * string
 
 type efun = {
   funargs : (string * typ) list;
@@ -51,4 +53,4 @@ type efun = {
   funstksz : int;
 }
 
-type eprog = efun prog
+type eprog = efun prog * (string, (string * typ) list) Hashtbl.t

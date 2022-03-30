@@ -32,6 +32,7 @@ let rec dump_eexpr = function
   | Ecall (fname, params) ->
       params |> List.map dump_eexpr |> String.concat ", "
       |> Printf.sprintf "%s(%s)" fname
+  | Egetfield (e, f, _) -> Printf.sprintf "%s.%s" (dump_eexpr e) f
 
 let indent_size = 2
 
@@ -71,6 +72,9 @@ let rec dump_einstr_rec indent oc i =
   | Istore (addr, v, _) ->
       print_spaces oc indent;
       Format.fprintf oc "*%s = %s;\n" (dump_eexpr addr) (dump_eexpr v)
+  | Isetfield (s, f, e, _) ->
+      print_spaces oc indent;
+      Format.fprintf oc "%s.%s = %s;\n" (dump_eexpr s) f (dump_eexpr e)
 
 let dump_einstr oc i = dump_einstr_rec 0 oc i
 
@@ -82,5 +86,18 @@ let dump_efun oc funname { funargs; funbody } =
     |> String.concat ", ")
     dump_einstr funbody
 
+let dump_struct_list oc structs =
+  Hashtbl.iter
+    (fun sname declar_list ->
+      Format.fprintf oc "struct %s {\n  %s\n};\n\n" sname
+        (String.concat "\n  "
+           (List.map
+              (fun (s, t) -> Printf.sprintf "%s %s;" (string_of_typ t) s)
+              declar_list)))
+    structs
+
 let dump_eprog oc = dump_prog dump_efun oc
-let dump_e oc p = dump_eprog oc p
+
+let dump_e oc p =
+  dump_struct_list oc (snd p);
+  dump_eprog oc (fst p)

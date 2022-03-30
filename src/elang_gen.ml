@@ -52,6 +52,17 @@ let binop_of_tag = function
   | Tcne -> Ecne
   | _ -> assert false
 
+let type_of_leaf typ_struct leaf =
+  match leaf with
+  | TypeLeaf (Tstruct sname) ->
+      if Option.is_some (Hashtbl.find_option typ_struct sname) then
+        OK (Tstruct sname)
+      else Error "Incomplete type"
+  | TypeLeaf t -> OK t
+  | _ ->
+      Error
+        (Printf.sprintf "type_of_leaf: unexpected AST: %s" (string_of_ast leaf))
+
 let rec typCompatBinop b t1 t2 =
   match (t1, t2) with
   | _, _ when t1 = t2 -> true
@@ -101,10 +112,11 @@ let rec typCompatBinop b t1 t2 =
    the tree is not well-formed, fails with an [Error] message. *)
 let rec make_eexpr_of_ast (typ_var : (string, typ) Hashtbl.t)
     (typ_fun : (string, typ list * typ) Hashtbl.t)
+    (typ_struct : (string, (string * typ) list) Hashtbl.t)
     (funvarinmem : (string, int) Hashtbl.t) (funstksz : int ref) (a : tree) :
     (expr * typ) res =
   let make_eexpr_of_ast_params =
-    make_eexpr_of_ast typ_var typ_fun funvarinmem funstksz
+    make_eexpr_of_ast typ_var typ_fun typ_struct funvarinmem funstksz
   in
   let res =
     match a with
@@ -152,9 +164,15 @@ let rec make_eexpr_of_ast (typ_var : (string, typ) Hashtbl.t)
             | Some _ -> ()
             | None ->
                 Hashtbl.add funvarinmem v !funstksz;
-                funstksz := !funstksz + size_of_type t)
+                funstksz := !funstksz + size_of_type typ_struct t)
         | _ -> ());
         OK (Eaddr e, Tptr t)
+    | Node (Tstruct, [ e; StringLeaf f ]) ->
+        make_eexpr_of_ast_params e >>= fun (e, t) ->
+        (match t with Tstruct sname -> OK sname | _ -> Error "Incorrect type")
+        >>= fun sname ->
+        field_type typ_struct sname f >>= fun t ->
+        OK (Egetfield (Eaddr e, f, sname), t)
     | Node (Tint, [ IntLeaf i ]) -> OK (Eint i, Tint)
     | Node (Tchar, [ CharLeaf c ]) -> OK (Echar c, Tchar)
     | StringLeaf v -> (
@@ -193,25 +211,47 @@ let rec make_eexpr_of_ast (typ_var : (string, typ) Hashtbl.t)
         (Format.sprintf "In make_eexpr_of_ast %s:\n%s" (string_of_ast a) msg)
 
 let rec make_einstr_of_ast (typ_var : (string, typ) Hashtbl.t)
-    (typ_fun : (string, typ list * typ) Hashtbl.t) (funrettype : typ)
+    (typ_fun : (string, typ list * typ) Hashtbl.t)
+    (typ_struct : (string, (string * typ) list) Hashtbl.t) (funrettype : typ)
     (funvarinmem : (string, int) Hashtbl.t) (funstksz : int ref) (a : tree) :
     instr res =
   let make_einstr_of_ast_params =
-    make_einstr_of_ast typ_var typ_fun funrettype funvarinmem funstksz
+    make_einstr_of_ast typ_var typ_fun typ_struct funrettype funvarinmem
+      funstksz
   in
   let make_eexpr_of_ast_params =
-    make_eexpr_of_ast typ_var typ_fun funvarinmem funstksz
+    make_eexpr_of_ast typ_var typ_fun typ_struct funvarinmem funstksz
   in
   let res =
     match a with
-    | Node (Tdeclare, [ TypeLeaf t; StringLeaf v ]) -> (
+    | Node (Tdeclare, [ typeLeaf; StringLeaf v ]) -> (
+        type_of_leaf typ_struct typeLeaf >>= fun t ->
+        (match t with
+        | Tvoid ->
+            Error (Printf.sprintf "Variable or field \'%s\' declared void" v)
+        | Tstruct _ ->
+            Hashtbl.add funvarinmem v !funstksz;
+            funstksz := !funstksz + size_of_type typ_struct t;
+            OK ()
+        | _ -> OK ())
+        >>= fun () ->
         match Hashtbl.find_option typ_var v with
         | None ->
             Hashtbl.replace typ_var v t;
             OK (Iblock [])
         | Some et ->
             v |> Printf.sprintf "Redefinition of \'%s\'" |> fun x -> Error x)
-    | Node (Tdeclare, [ TypeLeaf et; StringLeaf v; e ]) -> (
+    | Node (Tdeclare, [ typeLeaf; StringLeaf v; e ]) -> (
+        type_of_leaf typ_struct typeLeaf >>= fun et ->
+        (match et with
+        | Tvoid ->
+            Error (Printf.sprintf "Variable or field \'%s\' declared void" v)
+        | Tstruct _ ->
+            Hashtbl.add funvarinmem v !funstksz;
+            funstksz := !funstksz + size_of_type typ_struct et;
+            OK ()
+        | _ -> OK ())
+        >>= fun () ->
         match Hashtbl.find_option typ_var v with
         | None ->
             Hashtbl.replace typ_var v et;
@@ -245,6 +285,26 @@ let rec make_einstr_of_ast (typ_var : (string, typ) Hashtbl.t)
               Printf.sprintf "Expected type [%s], got type [%s]"
                 (string_of_typ et) (string_of_typ t)
               |> fun x -> Error x)
+    | Node (Tassign, [ Node (Tstruct, [ s; StringLeaf f ]); e ]) ->
+        make_eexpr_of_ast_params s >>= fun (s, t) ->
+        (match t with
+        | Tstruct sname -> OK sname
+        | _ ->
+            Error
+              (Printf.sprintf
+                 "Request for member \'%s\' in something not a structure or \
+                  union"
+                 f))
+        >>= fun sname ->
+        field_type typ_struct sname f >>= fun et ->
+        make_eexpr_of_ast_params e >>= fun (e, t) ->
+        if typCompat t et then OK (Isetfield (Eaddr s, f, e, sname))
+        else
+          Error
+            (Printf.sprintf
+               "Incompatible types when assigning to type \'%s\' from type \
+                \'%s\'"
+               (string_of_typ et) (string_of_typ t))
     | Node (Tif, [ e; i; NullLeaf ]) ->
         (* if without an else *)
         make_eexpr_of_ast_params e >>= fun (a, t) ->
@@ -310,23 +370,49 @@ let rec make_einstr_of_ast (typ_var : (string, typ) Hashtbl.t)
       Error
         (Format.sprintf "In make_einstr_of_ast %s:\n%s" (string_of_ast a) msg)
 
-let make_ident (a : tree) : (string * typ) res =
+let make_ident typ_struct (a : tree) : (string * typ) res =
   match a with
-  | Node (Targ, [ TypeLeaf t; StringLeaf s ]) -> OK (s, t)
+  | Node (Targ, [ typeLeaf; StringLeaf s ]) ->
+      type_of_leaf typ_struct typeLeaf >>= fun t -> OK (s, t)
   | a ->
       Error (Printf.sprintf "make_ident: unexpected AST: %s" (string_of_ast a))
 
-let make_fundef_of_ast (typ_fun : (string, typ list * typ) Hashtbl.t) (a : tree)
-    : (string * efun) option res =
+let make_fundef_of_ast (typ_fun : (string, typ list * typ) Hashtbl.t)
+    (typ_struct : (string, (string * typ) list) Hashtbl.t) (a : tree) :
+    (string * efun) option res =
   match a with
+  | Node (Tstructdef, [ TypeLeaf (Tstruct sname); Node (Tstructbody, []) ]) -> (
+      let opt = Hashtbl.find_option typ_struct sname in
+      match opt with
+      | None | Some [] ->
+          Hashtbl.replace typ_struct sname [];
+          OK None
+      | _ -> OK None)
+  | Node (Tstructdef, [ TypeLeaf (Tstruct sname); Node (Tstructbody, l) ]) -> (
+      let opt = Hashtbl.find_option typ_struct sname in
+      match opt with
+      | None | Some [] ->
+          Utils.list_map_res
+            (fun n ->
+              match n with
+              | Node (Tdeclare, [ typeLeaf; StringLeaf s ]) ->
+                  type_of_leaf typ_struct typeLeaf >>= fun t -> OK (s, t)
+              | _ ->
+                  Error
+                    (Printf.sprintf "make_fundef_of_ast: unexpected AST: %s"
+                       (string_of_ast n)))
+            l
+          >>= fun l ->
+          Hashtbl.replace typ_struct sname l;
+          OK None
+      | _ -> Error (Printf.sprintf "Redefinition of \'struct %s\'" sname))
   | Node
       ( Tfundef,
         [
-          TypeLeaf t;
-          Node (Tfunname, [ StringLeaf fname ]);
-          Node (Tfunargs, fargs);
+          typeLeaf; Node (Tfunname, [ StringLeaf fname ]); Node (Tfunargs, fargs);
         ] ) ->
-      list_map_res make_ident fargs >>= fun fargs ->
+      type_of_leaf typ_struct typeLeaf >>= fun t ->
+      list_map_res (make_ident typ_struct) fargs >>= fun fargs ->
       (match Hashtbl.find_option typ_fun fname with
       | None ->
           Hashtbl.replace typ_fun fname (List.map snd fargs, t);
@@ -342,12 +428,13 @@ let make_fundef_of_ast (typ_fun : (string, typ list * typ) Hashtbl.t) (a : tree)
   | Node
       ( Tfundef,
         [
-          TypeLeaf t;
+          typeLeaf;
           Node (Tfunname, [ StringLeaf fname ]);
           Node (Tfunargs, fargs);
           Node (Tfunbody, [ fbody ]);
         ] ) ->
-      list_map_res make_ident fargs >>= fun fargs ->
+      type_of_leaf typ_struct typeLeaf >>= fun t ->
+      list_map_res (make_ident typ_struct) fargs >>= fun fargs ->
       (match Hashtbl.find_option typ_fun fname with
       | None ->
           Hashtbl.replace typ_fun fname (List.map snd fargs, t);
@@ -361,9 +448,17 @@ let make_fundef_of_ast (typ_fun : (string, typ list * typ) Hashtbl.t) (a : tree)
           |> fun x -> Error x)
       >>= fun () ->
       let typ_var = Hashtbl.of_list fargs in
-      let funvarinmem = Hashtbl.create 1 in
       let funstksz = ref 0 in
-      make_einstr_of_ast typ_var typ_fun t funvarinmem funstksz fbody
+      let funvarinmem = Hashtbl.create 1 in
+      List.iter
+        (fun (v, t) ->
+          match t with
+          | Tstruct sname ->
+              Hashtbl.add funvarinmem v !funstksz;
+              funstksz := !funstksz + size_of_type typ_struct t
+          | _ -> ())
+        fargs;
+      make_einstr_of_ast typ_var typ_fun typ_struct t funvarinmem funstksz fbody
       >>= fun fbody ->
       OK
         (Some
@@ -385,17 +480,18 @@ let make_eprog_of_ast (a : tree) : eprog res =
   match a with
   | Node (Tlistglobdef, l) ->
       let typ_fun = Hashtbl.create (List.length l) in
+      let typ_struct = Hashtbl.create (List.length l) in
       Hashtbl.replace typ_fun "print" ([ Tint ], Tvoid);
       Hashtbl.replace typ_fun "print_int" ([ Tint ], Tvoid);
       Hashtbl.replace typ_fun "print_char" ([ Tchar ], Tvoid);
       list_map_res
         (fun a ->
-          make_fundef_of_ast typ_fun a >>= fun res ->
+          make_fundef_of_ast typ_fun typ_struct a >>= fun res ->
           match res with
           | Some (fname, efun) -> OK (Some (fname, Gfun efun))
           | None -> OK None)
         l
-      >>= fun l -> OK (List.filter_map identity l)
+      >>= fun l -> OK (List.filter_map identity l, typ_struct)
   | _ ->
       Error
         (Printf.sprintf "make_fundef_of_ast: Expected a Tlistglobdef, got %s."

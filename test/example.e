@@ -1,9 +1,18 @@
+struct b
+{
+    int a;
+};
+
+struct c
+{
+    struct b B;
+};
+
 int main()
 {
-    {
-        int a;
-        a = 5;
-    }
+    struct c C;
 
-    return a;
+    int a = C.B.a;
+
+    return 0;
 }

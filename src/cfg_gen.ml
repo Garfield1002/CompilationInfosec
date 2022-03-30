@@ -7,7 +7,7 @@ open Report
 open Cfg_print
 open Options
 
-let cfg_fun_of_efun
+let cfg_fun_of_efun typ_struct
     ({ funargs; funvartyp; funvarinmem; funbody; funstksz } : Elang.efun) =
   (* [cfg_expr_of_eexpr e] converts an [Elang.expr] into a [expr res]. This should
      always succeed and be straightforward.
@@ -15,6 +15,7 @@ let cfg_fun_of_efun
      In later versions of this compiler, you will add more things to [Elang.expr]
      but not to [Cfg.expr], hence the distinction.
   *)
+  let size_of_type_param = size_of_type typ_struct in
   let rec cfg_expr_of_eexpr (e : Elang.expr) : expr res =
     match e with
     | Elang.Ebinop (b, (e1, t1), (e2, t2)) -> (
@@ -22,9 +23,9 @@ let cfg_fun_of_efun
         cfg_expr_of_eexpr e2 >>= fun e2 ->
         match (t1, t2) with
         | Tptr p, _ ->
-            OK (Ebinop (b, e1, Ebinop (Emul, e2, Eint (size_of_type p))))
+            OK (Ebinop (b, e1, Ebinop (Emul, e2, Eint (size_of_type_param p))))
         | _, Tptr p ->
-            OK (Ebinop (b, Ebinop (Emul, e1, Eint (size_of_type p)), e2))
+            OK (Ebinop (b, Ebinop (Emul, e1, Eint (size_of_type_param p)), e2))
         | _ -> OK (Ebinop (b, e1, e2)))
     | Elang.Eunop (u, e) -> cfg_expr_of_eexpr e >>= fun e -> OK (Eunop (u, e))
     | Elang.Eaddr (Elang.Evar v) -> (
@@ -34,18 +35,23 @@ let cfg_fun_of_efun
         | _ -> Error "Variable not in memory")
     | Elang.Eaddr _ -> Error "Not Implemented"
     | Elang.Eload (e, t) ->
-        cfg_expr_of_eexpr e >>= fun e -> OK (Eload (e, size_of_type t))
+        cfg_expr_of_eexpr e >>= fun e -> OK (Eload (e, size_of_type_param t))
     | Elang.Eint i -> OK (Eint i)
     | Elang.Echar c -> OK (Eint (int_of_char c))
     | Elang.Evar v -> (
         let opt = Hashtbl.find_option funvarinmem v in
         let t = Hashtbl.find_option funvartyp v in
         match (opt, t) with
-        | Some offset, Some t -> OK (Eload (Estk offset, size_of_type t))
+        | Some offset, Some t -> OK (Eload (Estk offset, size_of_type_param t))
         | _ -> OK (Evar v))
     | Elang.Ecall (fname, params) ->
         Utils.list_map_res cfg_expr_of_eexpr params >>= fun params ->
         OK (Ecall (fname, params))
+    | Elang.Egetfield (e, f, sname) ->
+        field_offset typ_struct sname f >>= fun offset ->
+        field_type typ_struct sname f >>= fun t ->
+        cfg_expr_of_eexpr e >>= fun e ->
+        OK (Eload (Ebinop (Eadd, e, Eint offset), size_of_type_param t))
   in
   (* [cfg_node_of_einstr next cfg succ i] builds the CFG node(s) that correspond
      to the E instruction [i].
@@ -72,7 +78,7 @@ let cfg_fun_of_efun
         match (opt, t) with
         | Some addr, Some t ->
             Hashtbl.replace cfg next
-              (Cstore (Estk addr, e, size_of_type t, succ));
+              (Cstore (Estk addr, e, size_of_type_param t, succ));
             OK (next, next + 1)
         | _ ->
             Hashtbl.replace cfg next (Cassign (v, e, succ));
@@ -110,7 +116,15 @@ let cfg_fun_of_efun
     | Elang.Istore (addr, v, t) ->
         cfg_expr_of_eexpr addr >>= fun addr ->
         cfg_expr_of_eexpr v >>= fun v ->
-        Hashtbl.replace cfg next (Cstore (addr, v, size_of_type t, succ));
+        Hashtbl.replace cfg next (Cstore (addr, v, size_of_type_param t, succ));
+        OK (next, next + 1)
+    | Elang.Isetfield (e, f, v, sname) ->
+        field_offset typ_struct sname f >>= fun offset ->
+        field_type typ_struct sname f >>= fun t ->
+        cfg_expr_of_eexpr e >>= fun e ->
+        cfg_expr_of_eexpr v >>= fun v ->
+        Hashtbl.replace cfg next
+          (Cstore (Ebinop (Eadd, e, Eint offset), v, size_of_type_param t, succ));
         OK (next, next + 1)
   in
   (* Some nodes may be unreachable after the CFG is entirely generated. The
@@ -150,11 +164,12 @@ let cfg_fun_of_efun
       cfgfunstksz = funstksz;
     }
 
-let cfg_gdef_of_edef gd =
-  match gd with Gfun f -> cfg_fun_of_efun f >>= fun f -> OK (Gfun f)
+let cfg_gdef_of_edef typ_struct gd =
+  match gd with
+  | Gfun f -> cfg_fun_of_efun typ_struct f >>= fun f -> OK (Gfun f)
 
-let cfg_prog_of_eprog (ep : eprog) : cfg_fun prog res =
-  assoc_map_res (fun fname -> cfg_gdef_of_edef) ep
+let cfg_prog_of_eprog ((ep, typ_struct) : eprog) : cfg_fun prog res =
+  assoc_map_res (fun fname -> cfg_gdef_of_edef typ_struct) ep
 
 let pass_cfg_gen ep =
   match cfg_prog_of_eprog ep with

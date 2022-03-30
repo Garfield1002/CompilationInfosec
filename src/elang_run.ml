@@ -30,10 +30,11 @@ let eval_binop (b : binop) : int -> int -> int =
 (* [eval_unop u x] évalue l'opération unaire [u] sur l'argument [x]. *)
 let eval_unop (u : unop) : int -> int = match u with Eneg -> Int.neg
 
-let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
-    int option res =
+let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
+    : int option res =
   (* [eval_eexpr st e] évalue l'expression [e] dans l'état [st]. Renvoie une
      erreur si besoin. *)
+  let size_of_type_param = size_of_type typ_struct in
   let rec eval_eexpr st funvarinmem (typ_var : (string, typ) Hashtbl.t)
       (typ_fun : (string, typ list * typ) Hashtbl.t) (sp : int)
       (sp_offset : int) (e : expr) : (int * typ) res =
@@ -47,9 +48,9 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
         match (binop, a, b, t1, t2) with
         | Ediv, _, 0, _, _ -> Error "Error division by 0"
         | Emod, _, 0, _, _ -> Error "Error modulos by 0"
-        | Eadd, _, _, Tptr p, _ -> OK (a + (b * size_of_type p), Tptr p)
-        | Eadd, _, _, _, Tptr p -> OK (a + (b * size_of_type p), Tptr p)
-        | Esub, _, _, Tptr p, _ -> OK (a - (b * size_of_type p), Tptr p)
+        | Eadd, _, _, Tptr p, _ -> OK (a + (b * size_of_type_param p), Tptr p)
+        | Eadd, _, _, _, Tptr p -> OK (a + (b * size_of_type_param p), Tptr p)
+        | Esub, _, _, Tptr p, _ -> OK (a - (b * size_of_type_param p), Tptr p)
         | _ -> OK (eval_binop binop a b, t1))
     | Eunop (unop, a) ->
         eval_eexpr_params a >>= fun (a, t) -> OK (eval_unop unop a, t)
@@ -64,12 +65,26 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
         eval_eexpr_params e >>= fun (i, t) ->
         match t with
         | Tptr p ->
-            Mem.read_bytes_as_int st.mem i (size_of_type p) >>= fun i ->
+            Mem.read_bytes_as_int st.mem i (size_of_type_param p) >>= fun i ->
             OK (i, p)
         | _ ->
             Printf.sprintf "Invalid type argument of unary \'*\' (have \'%s\')"
               (string_of_typ t)
             |> fun x -> Error x)
+    | Egetfield (e, f, _) -> (
+        eval_eexpr_params e >>= fun (i, t) ->
+        match t with
+        | Tptr (Tstruct sname) ->
+            field_type typ_struct sname f >>= fun t ->
+            field_offset typ_struct sname f >>= fun off ->
+            Mem.read_bytes_as_int st.mem (i + off) (size_of_type_param t)
+            >>= fun i -> OK (i, t)
+        | _ ->
+            Error
+              (Printf.sprintf
+                 "Request for member \'%s\' in something not a structure or \
+                  union"
+                 f))
     | Eint i -> OK (i, Tint)
     | Echar c -> OK (int_of_char c, Tchar)
     | Evar s -> (
@@ -77,7 +92,7 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
         let t = Hashtbl.find_option typ_var s in
         match (opt, t) with
         | Some offset, Some t ->
-            Mem.read_bytes_as_int st.mem (sp + offset) (size_of_type t)
+            Mem.read_bytes_as_int st.mem (sp + offset) (size_of_type_param t)
             >>= fun i -> OK (i, t)
         | _ ->
             let v = Hashtbl.find_option st.env s in
@@ -134,7 +149,7 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
             |> fun x -> Error x)
         >>= fun p ->
         eval_eexpr_params v >>= fun (v, _) ->
-        let v = split_bytes (size_of_type p) v in
+        let v = split_bytes (size_of_type_param p) v in
         Mem.write_bytes st.mem addr v >>= fun () -> OK (None, st)
     | Iassign (s, e) -> (
         eval_eexpr_params e >>= fun (e, _) ->
@@ -143,7 +158,7 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
         match (opt, t) with
         | Some offset, Some t ->
             Mem.write_bytes st.mem (sp + offset)
-              (split_bytes (size_of_type t) e)
+              (split_bytes (size_of_type_param t) e)
             >>= fun () -> OK (None, st)
         | _ ->
             Hashtbl.replace st.env s e;
@@ -163,6 +178,23 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
         Format.fprintf oc "%d\n" e;
         OK (None, st)
     | Iblock [] -> OK (None, st)
+    | Isetfield (e, f, v, _) -> (
+        eval_eexpr_params e >>= fun (i, t) ->
+        eval_eexpr_params v >>= fun (e, _) ->
+        match t with
+        | Tptr (Tstruct sname) ->
+            field_type typ_struct sname f >>= fun t ->
+            field_offset typ_struct sname f >>= fun offset ->
+            Mem.write_bytes st.mem
+              (sp + i + offset)
+              (split_bytes (size_of_type_param t) e)
+            >>= fun () -> OK (None, st)
+        | _ ->
+            Error
+              (Printf.sprintf
+                 "Request for member \'%s\' in something not a structure or \
+                  union"
+                 f))
     | Iblock (h :: t) ->
         eval_einstr_params h >>= fun (ret, s) ->
         if Option.is_none ret then eval_einstr_params (Iblock t) else OK (ret, s)
@@ -205,10 +237,14 @@ let eval_eprog oc (ep : eprog) (memsize : int) (params : int list) :
         (fun a v -> Hashtbl.replace env a v)
         (List.map fst funargs) vargs
     with
-    | () ->
-        eval_einstr oc { st with env } funvarinmem fname funvartyp typ_fun sp
-          (sp + funstksz) funbody
-        >>= fun (v, st') -> OK (v, { st' with env = env_save })
+    | () -> (
+        match
+          eval_einstr oc { st with env } funvarinmem fname funvartyp typ_fun sp
+            (sp + funstksz) funbody
+        with
+        | OK (v, st') -> OK (v, { st' with env = env_save })
+        | Error e ->
+            Error (Printf.sprintf "Error in execution of \'%s\'\n%s" fname e))
     | exception Invalid_argument _ ->
         Error
           (Format.sprintf

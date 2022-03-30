@@ -59,6 +59,9 @@ type tag =
   | Tchar
   | Taddrof
   | Tindirection
+  | Tstruct
+  | Tstructdef
+  | Tstructbody
 
 type tree =
   | Node of tag * tree list
@@ -112,6 +115,9 @@ let string_of_tag = function
   | Tchar -> "Tchar"
   | Taddrof -> "Taddrof"
   | Tindirection -> "Tindirection"
+  | Tstruct -> "Tstruct"
+  | Tstructdef -> "Tstructdef"
+  | Tstructbody -> "Tstructbody"
 
 (* Écrit un fichier .dot qui correspond à un AST *)
 let rec draw_ast a next =
