@@ -62,6 +62,7 @@ type tag =
   | Tstruct
   | Tstructdef
   | Tstructbody
+  | Tarray
 
 type tree =
   | Node of tag * tree list
@@ -118,6 +119,10 @@ let string_of_tag = function
   | Tstruct -> "Tstruct"
   | Tstructdef -> "Tstructdef"
   | Tstructbody -> "Tstructbody"
+  | Tarray -> "Tarray"
+
+let type_of_leaf l =
+  match l with TypeLeaf t -> t | _ -> failwith "type_of_leaf: unexpected AST"
 
 (* Écrit un fichier .dot qui correspond à un AST *)
 let rec draw_ast a next =

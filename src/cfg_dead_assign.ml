@@ -9,6 +9,13 @@ open Options
 
 (* Dead Assign Elimination  -- Élimination des affectations mortes *)
 
+let rec has_fcall (e : expr) =
+  match e with
+  | Ebinop (_, e1, e2) -> has_fcall e1 || has_fcall e2
+  | Eload (e, _) | Eunop (_, e) -> has_fcall e
+  | Ecall _ -> true
+  | _ -> false
+
 (* [dead_assign_elimination_fun f] élimine les affectations mortes dans la
    function [f]. Cette fonction renvoie un couple [(f',c)] oú [f'] est la
    nouvelle fonction, et [c] est un booléen qui indique si du progrès a été
@@ -20,9 +27,9 @@ let dead_assign_elimination_fun
     Hashtbl.fold
       (fun (n : int) (m : cfg_node) (acc : bool) ->
         match m with
-        | Cassign (s, _, i) ->
+        | Cassign (s, e, i) ->
             let lan = live_after_node cfgfunbody n lives in
-            if Set.mem s lan then acc
+            if Set.mem s lan || has_fcall e then acc
             else (
               Hashtbl.replace cfgfunbody n (Cnop i);
               true)

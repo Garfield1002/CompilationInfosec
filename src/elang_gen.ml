@@ -124,6 +124,12 @@ let rec make_eexpr_of_ast (typ_var : (string, typ) Hashtbl.t)
         make_eexpr_of_ast_params e1 >>= fun (a1, t1) ->
         make_eexpr_of_ast_params e2 >>= fun (a2, t2) ->
         match (t, t1, t2) with
+        | Tadd, Ttab (p, _), _ when isArithmetic t2 ->
+            OK (Ebinop (Eadd, (a1, t1), (a2, t2)), Tptr p)
+        | Tadd, _, Ttab (p, _) when isArithmetic t1 ->
+            OK (Ebinop (Eadd, (a1, t1), (a2, t2)), Tptr p)
+        | Tsub, Ttab (p, _), _ when isArithmetic t2 ->
+            OK (Ebinop (Esub, (a1, t1), (a2, t2)), Tptr p)
         | Tadd, Tptr p, _ when isArithmetic t2 ->
             OK (Ebinop (Eadd, (a1, t1), (a2, t2)), Tptr p)
         | Tadd, _, Tptr p when isArithmetic t1 ->
@@ -180,7 +186,22 @@ let rec make_eexpr_of_ast (typ_var : (string, typ) Hashtbl.t)
         | None ->
             v |> Printf.sprintf "Variable \'%s\' is undeclared" |> fun x ->
             Error x
+        | Some (Ttab (p, _)) -> OK (Eaddr (Evar v), Tptr p)
         | Some t -> OK (Evar v, t))
+    | Node (Tarray, [ arr; idx ]) -> (
+        make_eexpr_of_ast_params idx >>= fun (idx, t) ->
+        (if isArithmetic t then OK ()
+        else Error "Array subscript is not an integer")
+        >>= fun () ->
+        make_eexpr_of_ast_params arr >>= fun (arr, t) ->
+        (match t with
+        | Ttab (ti, _) -> OK ti
+        | Tptr p -> OK p
+        | _ -> Error "Subscripted value is neither array nor pointer nor vector")
+        >>= fun t ->
+        match t with
+        | Ttab _ | Tstruct _ -> OK (Ebinop (Eadd, (arr, Tptr t), (idx, Tint)), t)
+        | _ -> OK (Eload (Ebinop (Eadd, (arr, Tptr t), (idx, Tint)), t), t))
     | Node (Tcall, [ StringLeaf fname; Node (Targs, params) ]) -> (
         match Hashtbl.find_option typ_fun fname with
         | None ->
@@ -190,7 +211,10 @@ let rec make_eexpr_of_ast (typ_var : (string, typ) Hashtbl.t)
             Utils.list_map_res make_eexpr_of_ast_params params
             >>= fun paramsT ->
             if typ_compat_list (List.map snd paramsT) expectedParamsT then
-              OK (Ecall (fname, List.map fst paramsT), t)
+              let foo (param, t) =
+                match t with Tstruct _ -> Eaddr param | _ -> param
+              in
+              OK (Ecall (fname, List.map foo paramsT), t)
             else (
               Printf.printf "Expected types \n";
               print_typ_list expectedParamsT;
@@ -229,7 +253,7 @@ let rec make_einstr_of_ast (typ_var : (string, typ) Hashtbl.t)
         (match t with
         | Tvoid ->
             Error (Printf.sprintf "Variable or field \'%s\' declared void" v)
-        | Tstruct _ ->
+        | Ttab _ | Tstruct _ ->
             Hashtbl.add funvarinmem v !funstksz;
             funstksz := !funstksz + size_of_type typ_struct t;
             OK ()
@@ -246,7 +270,7 @@ let rec make_einstr_of_ast (typ_var : (string, typ) Hashtbl.t)
         (match et with
         | Tvoid ->
             Error (Printf.sprintf "Variable or field \'%s\' declared void" v)
-        | Tstruct _ ->
+        | Ttab _ | Tstruct _ ->
             Hashtbl.add funvarinmem v !funstksz;
             funstksz := !funstksz + size_of_type typ_struct et;
             OK ()
@@ -305,6 +329,26 @@ let rec make_einstr_of_ast (typ_var : (string, typ) Hashtbl.t)
                "Incompatible types when assigning to type \'%s\' from type \
                 \'%s\'"
                (string_of_typ et) (string_of_typ t))
+    | Node (Tassign, [ Node (Tarray, [ arr; idx ]); v ]) ->
+        make_eexpr_of_ast_params idx >>= fun (idx, t) ->
+        (if isArithmetic t then OK ()
+        else Error "Array subscript is not an integer")
+        >>= fun () ->
+        make_eexpr_of_ast_params arr >>= fun (arr, t) ->
+        (match t with
+        | Ttab (ti, _) -> OK ti
+        | Tptr p -> OK p
+        | _ -> Error "Subscripted value is neither array nor pointer nor vector")
+        >>= fun et ->
+        make_eexpr_of_ast_params v >>= fun (v, t) ->
+        if typCompat t et then
+          OK (Istore (Ebinop (Eadd, (arr, Tptr et), (idx, Tint)), v, t))
+        else
+          Error
+            (Printf.sprintf
+               "Incompatible types when assigning to type \'%s\' from type \
+                \'%s\'"
+               (string_of_typ et) (string_of_typ t))
     | Node (Tif, [ e; i; NullLeaf ]) ->
         (* if without an else *)
         make_eexpr_of_ast_params e >>= fun (a, t) ->
@@ -354,7 +398,11 @@ let rec make_einstr_of_ast (typ_var : (string, typ) Hashtbl.t)
               List.fold_left2
                 (fun acc (_, t) et -> acc && typCompat t et)
                 true paramsT expectedParamsT
-            then OK (Icall (fname, List.map fst paramsT))
+            then
+              let foo (param, t) =
+                match t with Tstruct _ -> Eaddr param | _ -> param
+              in
+              OK (Icall (fname, List.map foo paramsT))
             else
               fname
               |> Printf.sprintf "Called \'%s\' with arguments of wrong type"
@@ -376,6 +424,34 @@ let make_ident typ_struct (a : tree) : (string * typ) res =
       type_of_leaf typ_struct typeLeaf >>= fun t -> OK (s, t)
   | a ->
       Error (Printf.sprintf "make_ident: unexpected AST: %s" (string_of_ast a))
+
+let make_prologue typ_struct (fargs : (string * typ) list) :
+    (string * typ) list * instr =
+  let isStruct (_, t) = match t with Tstruct _ -> true | _ -> false in
+  let struct_fargs = List.filter isStruct fargs in
+  let make_prologue1 (param, Tstruct sname) =
+    let new_param = Printf.sprintf "_%s" param in
+    let opt = Hashtbl.find_option typ_struct sname in
+    match opt with
+    | Some l ->
+        List.map
+          (fun (fname, ftype) ->
+            Isetfield
+              ( Eaddr (Evar param),
+                fname,
+                Egetfield (Evar new_param, fname, sname),
+                sname ))
+          l
+    | None -> failwith "Type not found"
+  in
+  let change_name (aname, atype) =
+    match atype with
+    | Tstruct _ -> (Printf.sprintf "_%s" aname, atype)
+    | _ -> (aname, atype)
+  in
+  let prolog = List.concat_map make_prologue1 struct_fargs in
+  let fargs = List.map change_name fargs in
+  (fargs, Iblock prolog)
 
 let make_fundef_of_ast (typ_fun : (string, typ list * typ) Hashtbl.t)
     (typ_struct : (string, (string * typ) list) Hashtbl.t) (a : tree) :
@@ -454,10 +530,12 @@ let make_fundef_of_ast (typ_fun : (string, typ list * typ) Hashtbl.t)
         (fun (v, t) ->
           match t with
           | Tstruct sname ->
+              Hashtbl.add typ_var (Printf.sprintf "_%s" v) (Tptr t);
               Hashtbl.add funvarinmem v !funstksz;
               funstksz := !funstksz + size_of_type typ_struct t
           | _ -> ())
         fargs;
+      let fargs, prolog = make_prologue typ_struct fargs in
       make_einstr_of_ast typ_var typ_fun typ_struct t funvarinmem funstksz fbody
       >>= fun fbody ->
       OK
@@ -465,7 +543,7 @@ let make_fundef_of_ast (typ_fun : (string, typ list * typ) Hashtbl.t)
            ( fname,
              {
                funargs = fargs;
-               funbody = fbody;
+               funbody = Iblock [ prolog; fbody ];
                funvartyp = typ_var;
                funrettype = t;
                funvarinmem;

@@ -38,7 +38,13 @@ let find_function (ep : 'a prog) fname : 'a res =
   | Some (Gfun f) -> OK f
   | _ -> Error (Format.sprintf "Unknown function %s\n" fname)
 
-type typ = Tint | Tchar | Tvoid | Tptr of typ | Tstruct of string
+type typ =
+  | Tint
+  | Tchar
+  | Tvoid
+  | Tptr of typ
+  | Tstruct of string
+  | Ttab of typ * int
 
 let rec string_of_typ t =
   match t with
@@ -47,14 +53,15 @@ let rec string_of_typ t =
   | Tvoid -> "void"
   | Tstruct s -> Printf.sprintf "struct %s" s
   | Tptr t -> t |> string_of_typ |> Printf.sprintf "%s*"
+  | Ttab (t, l) -> Printf.sprintf "%s[%d]" (string_of_typ t) l
 
 let rec typCompat t1 t2 =
   match (t1, t2) with
   | _, _ when t1 = t2 -> true
-  | Tptr _, _ | _, Tptr _ -> false
-  | Tstruct _, _ | _, Tstruct _ -> false
-  | Tvoid, _ | _, Tvoid -> false
-  | _ -> true
+  | Tchar, Tint | Tint, Tchar -> true
+  | Tptr p1, Ttab (p2, _) when p1 = p2 -> true
+  | Ttab (p2, _), Tptr p1 when p1 = p2 -> true
+  | _ -> false
 
 let isArithmetic = typCompat Tint
 
@@ -63,6 +70,7 @@ let rec size_of_type (structs : (string, (string * typ) list) Hashtbl.t)
   match t with
   | Tchar | Tvoid -> 1
   | Tint | Tptr _ -> size_of_mas (archi_mas ())
+  | Ttab (t, l) -> size_of_type structs t * l
   | Tstruct s -> (
       let opt = Hashtbl.find_option structs s in
       match opt with

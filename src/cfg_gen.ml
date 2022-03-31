@@ -26,6 +26,10 @@ let cfg_fun_of_efun typ_struct
             OK (Ebinop (b, e1, Ebinop (Emul, e2, Eint (size_of_type_param p))))
         | _, Tptr p ->
             OK (Ebinop (b, Ebinop (Emul, e1, Eint (size_of_type_param p)), e2))
+        | Ttab (p, _), _ ->
+            OK (Ebinop (b, e1, Ebinop (Emul, e2, Eint (size_of_type_param p))))
+        | _, Ttab (p, _) ->
+            OK (Ebinop (b, Ebinop (Emul, e1, Eint (size_of_type_param p)), e2))
         | _ -> OK (Ebinop (b, e1, e2)))
     | Elang.Eunop (u, e) -> cfg_expr_of_eexpr e >>= fun e -> OK (Eunop (u, e))
     | Elang.Eaddr (Elang.Evar v) -> (
@@ -47,11 +51,13 @@ let cfg_fun_of_efun typ_struct
     | Elang.Ecall (fname, params) ->
         Utils.list_map_res cfg_expr_of_eexpr params >>= fun params ->
         OK (Ecall (fname, params))
-    | Elang.Egetfield (e, f, sname) ->
+    | Elang.Egetfield (e, f, sname) -> (
         field_offset typ_struct sname f >>= fun offset ->
         field_type typ_struct sname f >>= fun t ->
         cfg_expr_of_eexpr e >>= fun e ->
-        OK (Eload (Ebinop (Eadd, e, Eint offset), size_of_type_param t))
+        match t with
+        | Tstruct _ | Ttab _ -> OK (Ebinop (Eadd, e, Eint offset))
+        | _ -> OK (Eload (Ebinop (Eadd, e, Eint offset), size_of_type_param t)))
   in
   (* [cfg_node_of_einstr next cfg succ i] builds the CFG node(s) that correspond
      to the E instruction [i].

@@ -54,11 +54,15 @@ let rec dump_einstr_rec indent oc i =
       print_spaces oc indent;
       Format.fprintf oc "while (%s) %a\n" (dump_eexpr cond)
         (dump_einstr_rec indent) i
+  | Iblock [] ->
+      print_spaces oc indent;
+      Format.fprintf oc "{ }\n"
   | Iblock il ->
+      print_spaces oc indent;
       Format.fprintf oc "{\n";
       List.iter (Format.fprintf oc "%a" (dump_einstr_rec (indent + 1))) il;
       print_spaces oc indent;
-      Format.fprintf oc "}"
+      Format.fprintf oc "}\n"
   | Ireturn e ->
       print_spaces oc indent;
       Format.fprintf oc "return %s;\n" (dump_eexpr e)

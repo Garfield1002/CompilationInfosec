@@ -1,24 +1,11 @@
 #include <stdio.h>
 
-struct b
-{
-    int a;
-};
-
-struct c
-{
-    struct b B;
-};
-
 int main()
 {
-    struct c C;
+    int a;
+    int b[10];
 
-    int a = 2;
-
-    C.b = 5;
-
-    C.B.a = 1;
+    a[5] = 5;
 
     return 0;
 }

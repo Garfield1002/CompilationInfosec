@@ -54,19 +54,24 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
         | _ -> OK (eval_binop binop a b, t1))
     | Eunop (unop, a) ->
         eval_eexpr_params a >>= fun (a, t) -> OK (eval_unop unop a, t)
-    | Eaddr (Evar v) ->
+    | Eaddr (Evar v) -> (
         let opt = Hashtbl.find_option funvarinmem v in
         let t = Hashtbl.find_option typ_var v in
-        if Option.is_none opt || Option.is_none t then
-          Error (Printf.sprintf "\'%s\' undeclared" v)
-        else OK (sp + Option.get opt, Tptr (Option.get t))
+        match (opt, t) with
+        | None, _ | _, None -> Error (Printf.sprintf "\'%s\' undeclared" v)
+        | Some offset, Some (Ttab (p, _)) -> OK (sp + offset, Tptr p)
+        | Some offset, Some t ->
+            (* Format.fprintf oc "Address of %s is %d \n" v (sp + offset); *)
+            OK (sp + offset, Tptr t))
     | Eaddr _ -> Error "Not implemented"
     | Eload (e, _) -> (
         eval_eexpr_params e >>= fun (i, t) ->
         match t with
+        (* | Ttab (p, _) *)
         | Tptr p ->
-            Mem.read_bytes_as_int st.mem i (size_of_type_param p) >>= fun i ->
-            OK (i, p)
+            Mem.read_bytes_as_int st.mem i (size_of_type_param p) >>= fun r ->
+            (* Format.fprintf oc "Read %d at address %d \n" r i; *)
+            OK (r, p)
         | _ ->
             Printf.sprintf "Invalid type argument of unary \'*\' (have \'%s\')"
               (string_of_typ t)
@@ -74,11 +79,18 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
     | Egetfield (e, f, _) -> (
         eval_eexpr_params e >>= fun (i, t) ->
         match t with
-        | Tptr (Tstruct sname) ->
+        | Tptr (Tstruct sname) -> (
             field_type typ_struct sname f >>= fun t ->
             field_offset typ_struct sname f >>= fun off ->
-            Mem.read_bytes_as_int st.mem (i + off) (size_of_type_param t)
-            >>= fun i -> OK (i, t)
+            match t with
+            | Ttab (p, _) -> OK (i + off, Tptr p)
+            | Tstruct _ -> OK (i + off, Tptr t)
+            | _ ->
+                Mem.read_bytes_as_int st.mem (i + off) (size_of_type_param t)
+                >>= fun res ->
+                (* Format.fprintf oc "Got field %s at address %d with value %d\n" f
+                   i res; *)
+                OK (res, t))
         | _ ->
             Error
               (Printf.sprintf
@@ -142,6 +154,7 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
     | Istore (addr, v, _) ->
         eval_eexpr_params addr >>= fun (addr, t) ->
         (match t with
+        (* | Ttab (p, _)  *)
         | Tptr p -> OK p
         | _ ->
             Printf.sprintf "Invalid type argument of unary \'*\' (have \'%s\')"
@@ -185,10 +198,11 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
         | Tptr (Tstruct sname) ->
             field_type typ_struct sname f >>= fun t ->
             field_offset typ_struct sname f >>= fun offset ->
-            Mem.write_bytes st.mem
-              (sp + i + offset)
+            Mem.write_bytes st.mem (i + offset)
               (split_bytes (size_of_type_param t) e)
-            >>= fun () -> OK (None, st)
+            >>= fun () ->
+            (* Format.fprintf oc "Set field %s of %d to %d \n" f i e; *)
+            OK (None, st)
         | _ ->
             Error
               (Printf.sprintf

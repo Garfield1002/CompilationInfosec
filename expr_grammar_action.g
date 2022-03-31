@@ -1,6 +1,6 @@
 tokens SYM_EOF SYM_IDENTIFIER<string> SYM_INTEGER<int> SYM_CHARACTER<char> SYM_PLUS SYM_MINUS SYM_ASTERISK SYM_DIV SYM_MOD SYM_AMPERSAND SYM_STRUCT SYM_POINT
 tokens SYM_LPARENTHESIS SYM_RPARENTHESIS SYM_LBRACE SYM_RBRACE
-tokens SYM_ASSIGN SYM_SEMICOLON SYM_RETURN SYM_IF SYM_WHILE SYM_ELSE SYM_COMMA SYM_PRINT
+tokens SYM_ASSIGN SYM_SEMICOLON SYM_RETURN SYM_IF SYM_WHILE SYM_ELSE SYM_COMMA SYM_PRINT SYM_LBRACKET SYM_RBRACKET
 tokens SYM_EQUALITY SYM_NOTEQ SYM_LT SYM_LEQ SYM_GT SYM_GEQ
 tokens SYM_INT SYM_CHAR SYM_VOID
 
@@ -16,7 +16,7 @@ non-terminals FUNCALL CALL_PARAMS CALL_REST_PARAMS
 non-terminals FUN_OR_VAR
 non-terminals TYPE CHAR ASSIGNMENT FUNDEF_DECL
 non-terminals TYPEPTR
-non-terminals STRUCT_BODY STRUCTDEF_DECL STRUCTDEF FUN_OR_STRUCT_DEFS FUN_OR_STRUCT_DEF STRUCT ASSIGN_OR_IGNORE
+non-terminals STRUCT_BODY STRUCTDEF_DECL STRUCTDEF FUN_OR_STRUCT_DEFS FUN_OR_STRUCT_DEF STRUCT ASSIGN_OR_IGNORE STRUCT_TABLE
 
 axiom S
 {
@@ -71,9 +71,12 @@ STRUCTDEF ->  STRUCTDEF_DECL SYM_SEMICOLON          { fun t -> Node(Tstructdef, 
 STRUCTDEF_DECL -> SYM_LBRACE STRUCT_BODY SYM_RBRACE {$2}
 STRUCTDEF_DECL ->                                   {[]}
 
-STRUCT_BODY -> TYPE IDENTIFIER SYM_SEMICOLON STRUCT_BODY  {Node(Tdeclare, [$1; $2])::$4}
+STRUCT_BODY -> TYPE IDENTIFIER STRUCT_TABLE SYM_SEMICOLON STRUCT_BODY  {($3 $1 $2)::$5}
 /* STRUCT_BODY -> STRUCTDEF STRUCT_BODY */
 STRUCT_BODY ->  {[]}
+
+STRUCT_TABLE  -> SYM_LBRACKET SYM_INTEGER SYM_RBRACKET  { fun t i -> Node (Tdeclare, [TypeLeaf (Ttab (type_of_leaf t, $2)); i;]) }
+STRUCT_TABLE  ->                                        { fun t i -> Node (Tdeclare, [t; i]) }
 
 LPARAMS     -> TYPE IDENTIFIER REST_PARAMS            { Node (Targ, [$1; $2])::$3}
 LPARAMS     ->                                        { [] }
@@ -86,14 +89,15 @@ INSTR       -> SYM_WHILE SYM_LPARENTHESIS EXPR SYM_RPARENTHESIS INSTR   { Node (
 INSTR       -> SYM_RETURN EXPR SYM_SEMICOLON                            { Node (Treturn, [$2]) }
 INSTR       -> SYM_PRINT EXPR SYM_SEMICOLON                             { Node (Tprint, [$2]) }
 INSTR       -> BLOC                                                     { $1 }
-INSTR       -> TYPE IDENTIFIER ASSIGNMENT SYM_SEMICOLON                 { Node (Tdeclare, $1 ::  $2 :: $3) }
+INSTR       -> TYPE IDENTIFIER ASSIGNMENT SYM_SEMICOLON                 { $3 $1 $2 }
 INSTR       -> EXPR ASSIGN_OR_IGNORE SYM_SEMICOLON                      { $2 $1 }
 
 ASSIGN_OR_IGNORE -> SYM_ASSIGN EXPR               { fun e -> Node (Tassign, [e; $2]) }
 ASSIGN_OR_IGNORE ->                               { identity }
 
-ASSIGNMENT  -> SYM_ASSIGN EXPR                    { [$2] }
-ASSIGNMENT  ->                                    { [] }
+ASSIGNMENT  -> SYM_ASSIGN EXPR                        { fun t i -> Node (Tdeclare, [t; i; $2]) }
+ASSIGNMENT  -> SYM_LBRACKET SYM_INTEGER SYM_RBRACKET  { fun t i -> Node (Tdeclare, [TypeLeaf (Ttab (type_of_leaf t, $2)); i;]) }
+ASSIGNMENT  ->                                        { fun t i -> Node (Tdeclare, [t; i]) }
 
 FUN_OR_VAR  -> FUNCALL                            { $1 }
 FUN_OR_VAR  ->                                    { identity }
@@ -117,6 +121,7 @@ FACTOR      -> INTEGER                                        { Node (Tint, [$1]
 FACTOR      -> SYM_LPARENTHESIS EXPR SYM_RPARENTHESIS STRUCT  { $4 $2 }
 FACTOR      -> IDENTIFIER FUN_OR_VAR STRUCT                   { $3 ($2 $1) }
 
+STRUCT      ->  SYM_LBRACKET EXPR SYM_RBRACKET STRUCT       { fun e -> $4 (Node(Tarray, [e; $2])) }
 STRUCT      ->  SYM_POINT IDENTIFIER STRUCT       { fun e -> $3 (Node(Tstruct, [e; $2])) }
 STRUCT      ->                                    { identity }
 
