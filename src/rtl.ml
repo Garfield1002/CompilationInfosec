@@ -22,6 +22,7 @@ type rtl_instr =
   | Rstk of reg * int
   | Rload of reg * reg * int
   | Rstore of reg * reg * int
+  | Rglobvar of reg * string
 
 type rtl_fun = {
   rtlfunargs : reg list;
@@ -33,6 +34,7 @@ type rtl_fun = {
 
 let written_rtl_regs_instr (i : rtl_instr) =
   match i with
+  | Rglobvar (rd, _)
   | Rbinop (_, rd, _, _)
   | Runop (_, rd, _)
   | Rconst (rd, _)

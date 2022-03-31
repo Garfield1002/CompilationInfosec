@@ -42,15 +42,12 @@ let string_of_reg = function
   | 31 -> "t6"
   | _ -> "undefreg"
 
-let print_reg r =
-  string_of_reg r
+let print_reg r = string_of_reg r
 
 let print_loc loc =
-  match loc with
-  | Stk o -> Format.sprintf "stk(%d)" o
-  | Reg r -> print_reg r
+  match loc with Stk o -> Format.sprintf "stk(%d)" o | Reg r -> print_reg r
 
-let print_binop (b: binop) =
+let print_binop (b : binop) =
   match b with
   | Elang.Eadd -> "add"
   | Elang.Emul -> "mul"
@@ -65,58 +62,59 @@ let print_binop (b: binop) =
   | Elang.Eceq -> "ceq"
   | Elang.Ecne -> "cne"
 
+let print_unop (u : unop) = match u with Elang.Eneg -> "neg"
 
-let print_unop  (u: unop) =
-  match u with
-  | Elang.Eneg -> "neg"
-
-let dump_ltl_instr oc (i: ltl_instr) =
+let dump_ltl_instr oc (i : ltl_instr) =
   match i with
-  | LAddi(rd, rs, i) ->
-    Format.fprintf oc "%s <- addi %s, %d" (print_reg rd) (print_reg rs) i
-  | LSubi(rd, rs, i) ->
-    Format.fprintf oc "%s <- subi %s, %d" (print_reg rd) (print_reg rs) i
-  | LBinop(b, rd, rs1, rs2) ->
-    Format.fprintf oc "%s <- %s %s, %s"
-      (print_reg rd) (print_binop b) ( print_reg rs1) (print_reg rs2)
-  | LUnop(u, rd, rs) ->
-    Format.fprintf oc "%s <- %s %s"
-      (print_reg rd) (print_unop u)  (print_reg rs)
-  | LStore(rt, i, rs, sz) ->
-    Format.fprintf oc "%s%s[%d] <- %s" (print_reg rt) (string_of_mem_access_size sz) i (print_reg rs)
-  | LLoad(rd, rt, i, sz) ->
-    Format.fprintf oc "%s <- %s%s[%d]" (print_reg rd) (print_reg rt) (string_of_mem_access_size sz) i
-  | LMov(rd, rs) ->
-    Format.fprintf oc "%s <- %s" (print_reg rd) (print_reg rs)
-  | LLabel l ->
-    Format.fprintf oc "%s" l
+  | LAddi (rd, rs, i) ->
+      Format.fprintf oc "%s <- addi %s, %d" (print_reg rd) (print_reg rs) i
+  | LSubi (rd, rs, i) ->
+      Format.fprintf oc "%s <- subi %s, %d" (print_reg rd) (print_reg rs) i
+  | LBinop (b, rd, rs1, rs2) ->
+      Format.fprintf oc "%s <- %s %s, %s" (print_reg rd) (print_binop b)
+        (print_reg rs1) (print_reg rs2)
+  | LUnop (u, rd, rs) ->
+      Format.fprintf oc "%s <- %s %s" (print_reg rd) (print_unop u)
+        (print_reg rs)
+  | LStore (rt, i, rs, sz) ->
+      Format.fprintf oc "%s%s[%d] <- %s" (print_reg rt)
+        (string_of_mem_access_size sz)
+        i (print_reg rs)
+  | LLoad (rd, rt, i, sz) ->
+      Format.fprintf oc "%s <- %s%s[%d]" (print_reg rd) (print_reg rt)
+        (string_of_mem_access_size sz)
+        i
+  | LMov (rd, rs) -> Format.fprintf oc "%s <- %s" (print_reg rd) (print_reg rs)
+  | LLabel l -> Format.fprintf oc "%s" l
+  | LGlobvar (rd, s) -> Format.fprintf oc "la %s, %s" (print_reg rd) s
   | LJmp l -> Format.fprintf oc "j %s" l
   | LJmpr r -> Format.fprintf oc "jmpr %s" (print_reg r)
   | LConst (rd, i) -> Format.fprintf oc "%s <- %d" (print_reg rd) i
   | LComment l -> Format.fprintf oc "<span style=\"color: gray;\">; %s</span>" l
-  | LBranch(cmp, rs1, rs2, s) ->
-    Format.fprintf oc "%s(%s,%s) ? j %s"
-      (print_cmpop cmp) (print_reg rs1) (print_reg rs2) s
-  | LCall fname ->
-    Format.fprintf oc "call %s" fname
+  | LBranch (cmp, rs1, rs2, s) ->
+      Format.fprintf oc "%s(%s,%s) ? j %s" (print_cmpop cmp) (print_reg rs1)
+        (print_reg rs2) s
+  | LCall fname -> Format.fprintf oc "call %s" fname
   | LHalt -> Format.fprintf oc "halt"
 
 let dump_ltl_instr_list fname oc l =
-  List.iteri (fun i ins ->
+  List.iteri
+    (fun i ins ->
       Format.fprintf oc "%s:%d: " fname i;
       dump_ltl_instr oc ins;
-      Format.fprintf oc "\n") l
+      Format.fprintf oc "\n")
+    l
 
 let dump_allocation oc fname alloc =
   Format.fprintf oc "// In function %s\n" fname;
-  List.iter (fun (linr,ltlloc) ->
-      Format.fprintf oc "// LinReg %d allocated to %s\n" linr (print_loc ltlloc)
-    ) alloc
+  List.iter
+    (fun (linr, ltlloc) ->
+      Format.fprintf oc "// LinReg %d allocated to %s\n" linr (print_loc ltlloc))
+    alloc
 
 let dump_ltl_fun oc fname lf =
   dump_allocation oc fname lf.ltlregalloc;
   Format.fprintf oc "%s:\n" fname;
   dump_ltl_instr_list fname oc lf.ltlfunbody
 
-let dump_ltl_prog oc lp =
-  dump_prog dump_ltl_fun oc lp
+let dump_ltl_prog oc lp = dump_prog dump_ltl_fun oc lp

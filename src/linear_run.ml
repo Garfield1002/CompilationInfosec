@@ -37,6 +37,10 @@ let rec exec_linear_instr oc lp fname f st sp next_sp (i : rtl_instr) =
   | Rconst (rd, i) ->
       Hashtbl.replace st.regs rd i;
       OK (None, st)
+  | Rglobvar (rd, s) ->
+      let addr = Hashtbl.find st.glob_env s in
+      Hashtbl.replace st.regs rd addr;
+      OK (None, st)
   | Rstk (rd, addr) ->
       Hashtbl.replace st.regs rd (addr + sp);
       OK (None, st)
@@ -158,6 +162,7 @@ and exec_linear_fun oc lp st sp fname f params =
 
 and exec_linear_prog oc lp memsize params =
   let st = init_state memsize in
+  init_glob st.mem st.glob_env lp global_start_address >>= fun _ ->
   find_function lp "main" >>= fun f ->
   let n = List.length f.linearfunargs in
   let params = take n params in

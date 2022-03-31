@@ -19,6 +19,7 @@ let gen_live (i : rtl_instr) =
   | Rstore (rd, rs, _) -> Set.of_list [ rd; rs ]
   | Rload (_, rs, _) -> Set.singleton rs
   | Rstk _ -> Set.empty
+  | Rglobvar _ -> Set.empty
 
 let kill_live (i : rtl_instr) =
   match i with
@@ -27,6 +28,7 @@ let kill_live (i : rtl_instr) =
   | Rconst (rd, _)
   | Rmov (rd, _)
   | Rstk (rd, _)
+  | Rglobvar (rd, _)
   | Rload (rd, _, _)
   | Rcall (Some rd, _, _) ->
       Set.singleton rd
@@ -86,6 +88,7 @@ let liveness_linear_prog lp =
   let lives = Hashtbl.create 17 in
   List.iter
     (function
-      | s, Gfun f -> Hashtbl.replace lives s (liveness_instrs f.linearfunbody))
+      | s, Gfun f -> Hashtbl.replace lives s (liveness_instrs f.linearfunbody)
+      | _ -> ())
     lp;
   lives

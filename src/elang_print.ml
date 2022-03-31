@@ -28,6 +28,7 @@ let rec dump_eexpr = function
   | Eaddr e -> Printf.sprintf "&%s" (dump_eexpr e)
   | Eint i -> Printf.sprintf "%d" i
   | Evar s -> Printf.sprintf "%s" s
+  | Eglobvar s -> Printf.sprintf "g_%s" s
   | Echar c -> Printf.sprintf "%c" c
   | Ecall (fname, params) ->
       params |> List.map dump_eexpr |> String.concat ", "

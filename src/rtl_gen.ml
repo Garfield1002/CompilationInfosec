@@ -83,6 +83,7 @@ let rec rtl_instrs_of_cfg_expr (next_reg, var2reg) (e : expr) =
         rtl_instrs_of_cfg_expr (next_reg, var2reg) e
       in
       (next_reg, Rload (next_reg, rs, sz) :: l, next_reg + 1, var2reg)
+  | Eglobvar v -> (next_reg, [ Rglobvar (next_reg, v) ], next_reg + 1, var2reg)
 
 let is_cmp_op = function
   | Eclt -> Some Rclt
@@ -185,6 +186,7 @@ let rtl_instrs_of_cfg_fun cfgfunname
 
 let rtl_of_gdef funname = function
   | Gfun f -> Gfun (rtl_instrs_of_cfg_fun funname f)
+  | Gvar (t, i) -> Gvar (t, i)
 
 let rtl_of_cfg cp = List.map (fun (s, gd) -> (s, rtl_of_gdef s gd)) cp
 

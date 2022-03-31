@@ -370,7 +370,8 @@ let regalloc lp lives all_colors =
                 else regalloc_fun f live_out all_colors
               in
               Hashtbl.replace allocations fname (rig, allocation, curstackslot)
-          | None -> ()))
+          | None -> ())
+      | _, Gvar (_, _) -> ())
     lp;
   dump !Options.rig_dump dump_interf_graphs allocations
     (call_dot "regalloc" "Register Allocation");

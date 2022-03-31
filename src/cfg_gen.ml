@@ -7,7 +7,7 @@ open Report
 open Cfg_print
 open Options
 
-let cfg_fun_of_efun typ_struct
+let cfg_fun_of_efun typ_struct typ_glob
     ({ funargs; funvartyp; funvarinmem; funbody; funstksz } : Elang.efun) =
   (* [cfg_expr_of_eexpr e] converts an [Elang.expr] into a [expr res]. This should
      always succeed and be straightforward.
@@ -37,9 +37,18 @@ let cfg_fun_of_efun typ_struct
         match opt with
         | Some addr -> OK (Estk addr)
         | _ -> Error "Variable not in memory")
-    | Elang.Eaddr _ -> Error "Not Implemented"
-    | Elang.Eload (e, t) ->
-        cfg_expr_of_eexpr e >>= fun e -> OK (Eload (e, size_of_type_param t))
+    | Elang.Eaddr (Elang.Eglobvar v) -> OK (Eglobvar v)
+    | Elang.Eaddr e -> (
+        cfg_expr_of_eexpr e >>= fun e ->
+        match e with Eload (e, _) -> OK e | _ -> Error "Not Implemented")
+    | Elang.Eload (e, t) -> (
+        cfg_expr_of_eexpr e >>= fun e ->
+        match t with
+        | Ttab (p, _) -> OK (Eload (e, size_of_type_param p))
+        | Tstruct sname ->
+            let _, t = Hashtbl.find typ_struct sname |> List.hd in
+            OK (Eload (e, size_of_type_param t))
+        | _ -> OK (Eload (e, size_of_type_param t)))
     | Elang.Eint i -> OK (Eint i)
     | Elang.Echar c -> OK (Eint (int_of_char c))
     | Elang.Evar v -> (
@@ -51,6 +60,11 @@ let cfg_fun_of_efun typ_struct
     | Elang.Ecall (fname, params) ->
         Utils.list_map_res cfg_expr_of_eexpr params >>= fun params ->
         OK (Ecall (fname, params))
+    | Elang.Eglobvar v -> (
+        let opt = Hashtbl.find_option typ_glob v in
+        match opt with
+        | Some t -> OK (Eload (Eglobvar v, size_of_type_param t))
+        | None -> Error "Couldn't find golbal var")
     | Elang.Egetfield (e, f, sname) -> (
         field_offset typ_struct sname f >>= fun offset ->
         field_type typ_struct sname f >>= fun t ->
@@ -86,8 +100,13 @@ let cfg_fun_of_efun typ_struct
             Hashtbl.replace cfg next
               (Cstore (Estk addr, e, size_of_type_param t, succ));
             OK (next, next + 1)
-        | _ ->
+        | _, Some t ->
             Hashtbl.replace cfg next (Cassign (v, e, succ));
+            OK (next, next + 1)
+        | _ ->
+            let t = Hashtbl.find typ_glob v in
+            Hashtbl.replace cfg next
+              (Cstore (Eglobvar v, e, size_of_type_param t, succ));
             OK (next, next + 1))
     | Elang.Iif (c, ithen, ielse) ->
         cfg_expr_of_eexpr c >>= fun c ->
@@ -170,12 +189,16 @@ let cfg_fun_of_efun typ_struct
       cfgfunstksz = funstksz;
     }
 
-let cfg_gdef_of_edef typ_struct gd =
+let cfg_gdef_of_edef typ_struct typ_glob name gd =
   match gd with
-  | Gfun f -> cfg_fun_of_efun typ_struct f >>= fun f -> OK (Gfun f)
+  | Gfun f -> cfg_fun_of_efun typ_struct typ_glob f >>= fun f -> OK (Gfun f)
+  | Gvar (t, i) ->
+      Hashtbl.replace typ_glob name t;
+      OK (Gvar (t, i))
 
 let cfg_prog_of_eprog ((ep, typ_struct) : eprog) : cfg_fun prog res =
-  assoc_map_res (fun fname -> cfg_gdef_of_edef typ_struct) ep
+  let typ_glob = Hashtbl.create 17 in
+  assoc_map_res (cfg_gdef_of_edef typ_struct typ_glob) ep
 
 let pass_cfg_gen ep =
   match cfg_prog_of_eprog ep with

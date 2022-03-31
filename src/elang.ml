@@ -30,6 +30,7 @@ type expr =
   | Eaddr of expr
   | Eload of expr * typ
   | Egetfield of expr * string * string
+  | Eglobvar of string
 
 type texpr = typ * expr
 

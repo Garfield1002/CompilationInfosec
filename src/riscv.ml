@@ -26,10 +26,9 @@ open Archi
    - calls the "main" function of our program,
    - prints the return value to the screen,
    - and finally exits the program by issuing the appropriate system call.
-
 *)
 
-let riscv_of_cmp (cmp: rtl_cmp) =
+let riscv_of_cmp (cmp : rtl_cmp) =
   match cmp with
   | Rtl.Rclt -> "blt"
   | Rtl.Rcle -> "ble"
@@ -38,7 +37,7 @@ let riscv_of_cmp (cmp: rtl_cmp) =
   | Rtl.Rceq -> "beq"
   | Rtl.Rcne -> "bne"
 
-let print_binop (b: binop) =
+let print_binop (b : binop) =
   match b with
   | Elang.Eadd -> "add"
   | Elang.Emul -> "mul"
@@ -48,123 +47,114 @@ let print_binop (b: binop) =
   | Elang.Esub -> "sub"
   | _ -> failwith "Unexpected binop"
 
-let print_unop (u: unop) =
-  match u with
-  | Elang.Eneg -> "neg"
+let print_unop (u : unop) = match u with Elang.Eneg -> "neg"
 
 let instrsuffix_of_size sz =
-  match sz with
-  | MAS1 -> 'b'
-  | MAS4 -> 'w'
-  | MAS8 -> 'd'
+  match sz with MAS1 -> 'b' | MAS4 -> 'w' | MAS8 -> 'd'
 
-let dump_riscv_instr oc (i: ltl_instr) =
+let dump_riscv_instr oc (i : ltl_instr) =
   match i with
-  | LAddi(rd, rs, i) ->
-    Format.fprintf oc "addi %s, %s, %d\n" (print_reg rd) (print_reg rs) i
-  | LSubi(rd, rs, i) ->
-    Format.fprintf oc "addi %s, %s, %d\n" (print_reg rd) (print_reg rs) (-i)
-  | LBinop(b, rd, rs1, rs2) ->
-    begin match b with
-     | Elang.Eclt ->
-        Format.fprintf oc "slt %s, %s, %s\n"
-          (print_reg rd) (print_reg rs1) (print_reg rs2)
+  | LAddi (rd, rs, i) ->
+      Format.fprintf oc "addi %s, %s, %d\n" (print_reg rd) (print_reg rs) i
+  | LSubi (rd, rs, i) ->
+      Format.fprintf oc "addi %s, %s, %d\n" (print_reg rd) (print_reg rs) (-i)
+  | LBinop (b, rd, rs1, rs2) -> (
+      match b with
+      | Elang.Eclt ->
+          Format.fprintf oc "slt %s, %s, %s\n" (print_reg rd) (print_reg rs1)
+            (print_reg rs2)
       | Elang.Ecgt ->
-        Format.fprintf oc "slt %s, %s, %s\n"
-          (print_reg rd) (print_reg rs2) (print_reg rs1)
+          Format.fprintf oc "slt %s, %s, %s\n" (print_reg rd) (print_reg rs2)
+            (print_reg rs1)
       | Elang.Ecle ->
-        (* 'rd <- rs1 <= rs2' == 'rd <- rs2 < rs1; rd <- seqz rd' *)
-        Format.fprintf oc "slt %s, %s, %s\n"
-          (print_reg rd) (print_reg rs2) (print_reg rs1);
-        Format.fprintf oc "seqz %s, %s\n"
-          (print_reg rd) (print_reg rd)
+          (* 'rd <- rs1 <= rs2' == 'rd <- rs2 < rs1; rd <- seqz rd' *)
+          Format.fprintf oc "slt %s, %s, %s\n" (print_reg rd) (print_reg rs2)
+            (print_reg rs1);
+          Format.fprintf oc "seqz %s, %s\n" (print_reg rd) (print_reg rd)
       | Elang.Ecge ->
-        Format.fprintf oc "slt %s, %s, %s\n"
-          (print_reg rd) (print_reg rs1) (print_reg rs2);
-        Format.fprintf oc "seqz %s, %s\n"
-          (print_reg rd) (print_reg rd)
+          Format.fprintf oc "slt %s, %s, %s\n" (print_reg rd) (print_reg rs1)
+            (print_reg rs2);
+          Format.fprintf oc "seqz %s, %s\n" (print_reg rd) (print_reg rd)
       | Elang.Eceq ->
-        Format.fprintf oc "sub %s, %s, %s\n"
-          (print_reg rd) (print_reg rs1) (print_reg rs2);
-        Format.fprintf oc "seqz %s, %s\n"
-          (print_reg rd) (print_reg rd)
+          Format.fprintf oc "sub %s, %s, %s\n" (print_reg rd) (print_reg rs1)
+            (print_reg rs2);
+          Format.fprintf oc "seqz %s, %s\n" (print_reg rd) (print_reg rd)
       | Elang.Ecne ->
-        Format.fprintf oc "sub %s, %s, %s\n"
-          (print_reg rd) (print_reg rs1) (print_reg rs2);
-        Format.fprintf oc "snez %s, %s\n"
-          (print_reg rd) (print_reg rd)
-      | _ -> Format.fprintf oc "%s %s, %s, %s\n"
-               (print_binop b) (print_reg rd) (print_reg rs1) (print_reg rs2)
-    end
-  | LUnop(u, rd, rs) ->
-    Format.fprintf oc "%s %s, %s\n"
-          (print_unop u) (print_reg rd) (print_reg rs)
-  | LStore(rt, i, rs, sz) ->
-    let sz = instrsuffix_of_size sz in
-    Format.fprintf oc "s%c %s, %d(%s)\n"
-          sz (print_reg rs) i (print_reg rt)
-  | LLoad(rd, rt, i, sz) ->
-    let sz = (instrsuffix_of_size sz) in
-    Format.fprintf oc "l%c %s, %d(%s)\n"
-      sz (print_reg rd) i (print_reg rt)
-  | LMov(rd, rs) ->
-    Format.fprintf oc "mv %s, %s\n" (print_reg rd) (print_reg rs)
-  | LLabel l ->
-    Format.fprintf oc "%s:\n" l
+          Format.fprintf oc "sub %s, %s, %s\n" (print_reg rd) (print_reg rs1)
+            (print_reg rs2);
+          Format.fprintf oc "snez %s, %s\n" (print_reg rd) (print_reg rd)
+      | _ ->
+          Format.fprintf oc "%s %s, %s, %s\n" (print_binop b) (print_reg rd)
+            (print_reg rs1) (print_reg rs2))
+  | LUnop (u, rd, rs) ->
+      Format.fprintf oc "%s %s, %s\n" (print_unop u) (print_reg rd)
+        (print_reg rs)
+  | LGlobvar (rd, s) -> Format.fprintf oc "la %s, %s\n" (print_reg rd) s
+  | LStore (rt, i, rs, sz) ->
+      let sz = instrsuffix_of_size sz in
+      Format.fprintf oc "s%c %s, %d(%s)\n" sz (print_reg rs) i (print_reg rt)
+  | LLoad (rd, rt, i, sz) ->
+      let sz = instrsuffix_of_size sz in
+      Format.fprintf oc "l%c %s, %d(%s)\n" sz (print_reg rd) i (print_reg rt)
+  | LMov (rd, rs) ->
+      Format.fprintf oc "mv %s, %s\n" (print_reg rd) (print_reg rs)
+  | LLabel l -> Format.fprintf oc "%s:\n" l
   | LJmp l -> Format.fprintf oc "j %s\n" l
   | LJmpr r -> Format.fprintf oc "jr %s\n" (print_reg r)
   | LConst (rd, i) -> Format.fprintf oc "li %s, %d\n\n" (print_reg rd) i
   | LComment l -> Format.fprintf oc "# %s\n" l
-  | LBranch(cmp, rs1, rs2, s) ->
-    Format.fprintf oc "%s %s, %s, %s\n"
-      (riscv_of_cmp cmp) (print_reg rs1) (print_reg rs2) s
-  | LCall fname ->
-    Format.fprintf oc "jal ra, %s\n" fname
+  | LBranch (cmp, rs1, rs2, s) ->
+      Format.fprintf oc "%s %s, %s, %s\n" (riscv_of_cmp cmp) (print_reg rs1)
+        (print_reg rs2) s
+  | LCall fname -> Format.fprintf oc "jal ra, %s\n" fname
   | LHalt -> Format.fprintf oc "halt\n"
 
-let dump_riscv_fun oc (fname , lf) =
+let dump_riscv_fun oc (fname, lf) =
   Format.fprintf oc "%s:\n" fname;
   List.iter (dump_riscv_instr oc) lf.ltlfunbody
 
 let riscv_load_args target oc : unit =
   (match target with
-   | Linux -> LLoad(reg_s1, reg_sp, 0, archi_mas ()) :: (* s1 <- argc *)
-              LAddi(reg_s2, reg_sp, (Archi.wordsize ())) :: []
-   | Xv6 -> LMov(reg_s1, reg_a0) ::
-            LMov(reg_s2, reg_a1) :: []) @
-  LConst(reg_s3, 1) ::
-  LSubi(reg_sp, reg_sp, 72) ::
-  LLabel "Lloop" ::
-  LBranch(Rceq, reg_s3, reg_s1, "Lendargs") ::
-  LMov(reg_a0, reg_t4) ::
-  LAddi(reg_s4, reg_s3, 0) ::
-  LConst(reg_t1, (Archi.wordsize ())) ::
-  LBinop(Emul, reg_s4, reg_s4, reg_t1) ::
-  LBinop(Eadd, reg_t3, reg_s4, reg_s2) ::
-  LLoad(reg_a0, reg_t3, 0, archi_mas ()) ::
-  LCall "atoi" ::
-  LBinop(Esub, reg_s4, reg_fp, reg_s4) ::
-  LStore(reg_s4, 0, reg_a0, archi_mas ()) ::
-  LAddi(reg_s3, reg_s3, 1) ::
-  LJmp "Lloop" ::
-  LLabel "Lendargs" ::
-  LLoad(reg_a0, reg_fp, -8, archi_mas ()) ::
-  LLoad(reg_a1, reg_fp, -16, archi_mas ()) ::
-  LLoad(reg_a2, reg_fp, -24, archi_mas ()) ::
-  LLoad(reg_a3, reg_fp, -32, archi_mas ()) ::
-  LLoad(reg_a4, reg_fp, -40, archi_mas ()) ::
-  LLoad(reg_a5, reg_fp, -48, archi_mas ()) ::
-  LLoad(reg_a6, reg_fp, -56, archi_mas ()) ::
-  LLoad(reg_a7, reg_fp, -64, archi_mas ()) ::
-  [] |>
-  List.iter (dump_riscv_instr oc)
+  | Linux ->
+      [
+        LLoad (reg_s1, reg_sp, 0, archi_mas ());
+        (* s1 <- argc *)
+        LAddi (reg_s2, reg_sp, Archi.wordsize ());
+      ]
+  | Xv6 -> [ LMov (reg_s1, reg_a0); LMov (reg_s2, reg_a1) ])
+  @ [
+      LConst (reg_s3, 1);
+      LSubi (reg_sp, reg_sp, 72);
+      LLabel "Lloop";
+      LBranch (Rceq, reg_s3, reg_s1, "Lendargs");
+      LMov (reg_a0, reg_t4);
+      LAddi (reg_s4, reg_s3, 0);
+      LConst (reg_t1, Archi.wordsize ());
+      LBinop (Emul, reg_s4, reg_s4, reg_t1);
+      LBinop (Eadd, reg_t3, reg_s4, reg_s2);
+      LLoad (reg_a0, reg_t3, 0, archi_mas ());
+      LCall "atoi";
+      LBinop (Esub, reg_s4, reg_fp, reg_s4);
+      LStore (reg_s4, 0, reg_a0, archi_mas ());
+      LAddi (reg_s3, reg_s3, 1);
+      LJmp "Lloop";
+      LLabel "Lendargs";
+      LLoad (reg_a0, reg_fp, -8, archi_mas ());
+      LLoad (reg_a1, reg_fp, -16, archi_mas ());
+      LLoad (reg_a2, reg_fp, -24, archi_mas ());
+      LLoad (reg_a3, reg_fp, -32, archi_mas ());
+      LLoad (reg_a4, reg_fp, -40, archi_mas ());
+      LLoad (reg_a5, reg_fp, -48, archi_mas ());
+      LLoad (reg_a6, reg_fp, -56, archi_mas ());
+      LLoad (reg_a7, reg_fp, -64, archi_mas ());
+    ]
+  |> List.iter (dump_riscv_instr oc)
 
-let rv_store () =
-  Format.sprintf "s%c" (Archi.instrsuffix ())
-let rv_load () =
-  Format.sprintf "l%c" (Archi.instrsuffix ())
+let rv_store () = Format.sprintf "s%c" (Archi.instrsuffix ())
+let rv_load () = Format.sprintf "l%c" (Archi.instrsuffix ())
 
 let riscv_prelude target oc =
+  Format.fprintf oc ".section .text\n";
   Format.fprintf oc ".include \"syscall_numbers.s\"\n";
   Format.fprintf oc ".globl _start\n";
   Format.fprintf oc "_start:\n";
@@ -173,7 +163,7 @@ let riscv_prelude target oc =
   Format.fprintf oc "  addi t0, gp, 8\n";
   Format.fprintf oc "  %s t0, 0(gp)\n" (rv_store ());
   Format.fprintf oc "  mv s0, sp\n";
-  riscv_load_args target oc ;
+  riscv_load_args target oc;
   Format.fprintf oc "jal ra, main\n";
   Format.fprintf oc "mv s0, a0\n";
   Format.fprintf oc "jal ra, println\n";
@@ -184,8 +174,25 @@ let riscv_prelude target oc =
   Format.fprintf oc "ecall\n"
 
 let dump_riscv_prog target oc lp : unit =
-  (if !nostart then () else riscv_prelude target oc);
+  Format.fprintf oc ".section .data\n";
+  List.iter
+    (function
+      | vname, Gvar (t, Iint i) ->
+          split_bytes (size_of_type_simple t) i
+          |> List.map (Printf.sprintf "%d")
+          |> String.concat ", "
+          |> Format.fprintf oc "%s:\n    .byte %s\n" vname
+      | vname, Gvar (t, Ichar c) ->
+          split_bytes (size_of_type_simple t) (int_of_char c)
+          |> List.map (Printf.sprintf "%d")
+          |> String.concat ", "
+          |> Format.fprintf oc "%s:\n    .byte %s\n" vname
+      | vname, Gvar (t, Ispace s) ->
+          Format.fprintf oc "%s:\n    .zero %d\n" vname s
+      | _ -> ())
+    lp;
+  if !nostart then () else riscv_prelude target oc;
   Format.fprintf oc ".global main\n";
-  List.iter (function
-        (fname, Gfun f) -> dump_riscv_fun oc (fname,f)
-    ) lp
+  List.iter
+    (function fname, Gfun f -> dump_riscv_fun oc (fname, f) | _ -> ())
+    lp

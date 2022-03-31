@@ -12,6 +12,7 @@ type expr =
   | Ecall of string * expr list
   | Estk of int
   | Eload of expr * int
+  | Eglobvar of string
 
 type cfg_node =
   | Cassign of string * expr * int

@@ -92,7 +92,7 @@ let nop_elim_fun ({ cfgfunargs; cfgfunbody; cfgentry } as f : cfg_fun) =
      calculer, et le point d'entrée est transformé en conséquence. *)
   { f with cfgfunbody; cfgentry }
 
-let nop_elim_gdef gd = match gd with Gfun f -> Gfun (nop_elim_fun f)
+let nop_elim_gdef gd = match gd with Gfun f -> Gfun (nop_elim_fun f) | _ -> gd
 
 let nop_elimination cp =
   if !Options.no_cfg_ne then cp else assoc_map nop_elim_gdef cp

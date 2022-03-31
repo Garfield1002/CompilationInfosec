@@ -52,6 +52,7 @@ let rec string_of_regexp r =
 let lowercase_letters = "abcdefghijklmnopqrstuvwxyz"
 let uppercase_letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 let digits = "0123456789"
+let hexdigits = "0123456789abcdefABCDEF"
 let other_characters = "?!=<>_ :;,{}()[]^`-+*/%@\n\t\x00.\"\'\\|~#$&"
 
 (* L'opérateur ^ dénote la concaténation des chaînes de caractères. *)
@@ -63,6 +64,7 @@ let letter_regexp =
   char_range (char_list_of_string (uppercase_letters ^ lowercase_letters))
 
 let digit_regexp = char_range (char_list_of_string digits)
+let hexdigit_regexp = char_range (char_list_of_string hexdigits)
 
 let identifier_material =
   char_range
@@ -105,6 +107,8 @@ let list_regexp : (regexp * (string -> token option)) list =
     (keyword_regexp ">", fun s -> Some SYM_GT);
     (keyword_regexp "<=", fun s -> Some SYM_LEQ);
     (keyword_regexp ">=", fun s -> Some SYM_GEQ);
+    ( Cat (keyword_regexp "0x", plus hexdigit_regexp),
+      fun s -> Some (SYM_INTEGER (int_of_string s)) );
     ( Cat (letter_regexp, Star identifier_material),
       fun s -> Some (SYM_IDENTIFIER s) );
     (* end TODO *)

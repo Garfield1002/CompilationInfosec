@@ -70,8 +70,8 @@ let constant_propagation_fun
   let ht = Hashtbl.map (fun n m -> constant_propagation_instr m) cfgfunbody in
   { f with cfgfunbody = ht }
 
-let constant_propagation_gdef = function
-  | Gfun f -> Gfun (constant_propagation_fun f)
+let constant_propagation_gdef gd =
+  match gd with Gfun f -> Gfun (constant_propagation_fun f) | _ -> gd
 
 let constant_propagation p =
   if !Options.no_cfg_constprop then p else assoc_map constant_propagation_gdef p

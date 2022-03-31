@@ -53,7 +53,8 @@ let dump_rtl_instr name (live_in, live_out) oc (i : rtl_instr) =
       Format.fprintf oc "load %s %s(%d)" (print_reg rd) (print_reg rd) sz
   | Rstk (rd, addr) -> Format.fprintf oc "%s<-0x%.8X" (print_reg rd) addr
   | Rstore (rd, rs, sz) ->
-      Format.fprintf oc "store %s(%d) %s" (print_reg rd) sz (print_reg rs));
+      Format.fprintf oc "store %s(%d) %s" (print_reg rd) sz (print_reg rs)
+  | Rglobvar (rd, s) -> Format.fprintf oc "load_address %s %s" (print_reg rd) s);
   Format.fprintf oc "\n";
   dump_liveness live_out "after"
 

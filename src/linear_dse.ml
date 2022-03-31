@@ -35,7 +35,8 @@ let dse_prog p live =
               |> snd
             in
             let f = dse_fun live f in
-            (fname, Gfun f))
+            (fname, Gfun f)
+        | _ -> (fname, gdef))
       p
 
 let pass_linear_dse linear lives =

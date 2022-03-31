@@ -47,6 +47,7 @@ type ltl_state = {
   labels : (string, int) Hashtbl.t;
   mem : Mem.t;
   numstep : int ref;
+  glob_env : (string, int) Hashtbl.t;
 }
 
 (* Finds the position of a label in the code. *)
@@ -99,6 +100,10 @@ let exec_ltl_instr oc ip st : int option res =
   | LUnop (u, rd, rs) ->
       get_reg st rs $ fun vs ->
       Array.set st.regs rd (eval_unop u vs);
+      next ip
+  | LGlobvar (rd, v) ->
+      let i = Hashtbl.find st.glob_env v in
+      Array.set st.regs rd i;
       next ip
   | LStore (rt, i, rs, sz) ->
       get_reg st rt $ fun vt ->
@@ -162,7 +167,7 @@ let init_state memsize lp params =
   let codesize =
     List.fold_left
       (fun sz (name, def) ->
-        match def with Gfun f -> sz + List.length f.ltlfunbody)
+        match def with Gfun f -> sz + List.length f.ltlfunbody | _ -> sz)
       0 lp
   in
   let code : ltl_instr Array.t = Array.init codesize (fun _ -> LHalt) in
@@ -200,7 +205,8 @@ let init_state memsize lp params =
                 funinfo = f.ltlfuninfo;
                 funregalloc = f.ltlregalloc;
               };
-            funend)
+            funend
+        | _ -> ofs)
       0 lp
   in
 
@@ -222,7 +228,15 @@ let init_state memsize lp params =
   Printf.eprintf "numlabels = %d\n" (Hashtbl.length labels);
   Printf.eprintf "labels = %s\n"
     (Hashtbl.keys labels |> List.of_enum |> String.concat ", ");
-  { code; funs; mem; labels; regs; numstep = ref 0 }
+  {
+    code;
+    funs;
+    mem;
+    labels;
+    regs;
+    numstep = ref 0;
+    glob_env = Hashtbl.create 17;
+  }
 
 let rec exec_ltl_at oc ip st =
   match exec_ltl_instr oc ip st with
@@ -232,6 +246,7 @@ let rec exec_ltl_at oc ip st =
 
 let exec_ltl_prog oc lp memsize params : int option res =
   let st = init_state memsize lp params in
+  init_glob st.mem st.glob_env lp global_start_address >>= fun _ ->
   match Hashtbl.find_option st.funs "main" with
   | None -> Error (Format.sprintf "Could not find function main.")
   | Some { funstart } ->

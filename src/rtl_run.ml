@@ -10,9 +10,18 @@ open Utils
 open Builtins
 open Prog
 
-type state = { mem : Mem.t; regs : (reg, int) Hashtbl.t }
+type state = {
+  mem : Mem.t;
+  regs : (reg, int) Hashtbl.t;
+  glob_env : (string, int) Hashtbl.t;
+}
 
-let init_state memsize = { mem = Mem.init memsize; regs = Hashtbl.create 17 }
+let init_state memsize =
+  {
+    mem = Mem.init memsize;
+    regs = Hashtbl.create 17;
+    glob_env = Hashtbl.create 17;
+  }
 
 let eval_rtl_cmp = function
   | Rcle -> ( <= )
@@ -46,6 +55,10 @@ let rec exec_rtl_instr oc rp rtlfunname f st sp next_sp (i : rtl_instr) =
                (print_reg rs)))
   | Rconst (rd, i) ->
       Hashtbl.replace st.regs rd i;
+      OK (None, st)
+  | Rglobvar (rd, s) ->
+      let addr = Hashtbl.find st.glob_env s in
+      Hashtbl.replace st.regs rd addr;
       OK (None, st)
   | Rstk (rd, addr) ->
       Hashtbl.replace st.regs rd (addr + sp);
@@ -173,6 +186,7 @@ and exec_rtl_fun oc rp st sp rtlfunname f params =
 
 and exec_rtl_prog oc rp memsize params =
   let st = init_state memsize in
+  init_glob st.mem st.glob_env rp global_start_address >>= fun _ ->
   find_function rp "main" >>= fun f ->
   let n = List.length f.rtlfunargs in
   let params = take n params in

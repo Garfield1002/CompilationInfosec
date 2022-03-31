@@ -14,6 +14,7 @@ let rec vars_in_expr (e : expr) =
   | Estk _ -> Set.empty
   | Eload (e, _) -> vars_in_expr e
   | Evar s -> Set.singleton s
+  | Eglobvar _ -> Set.empty
   | Ecall (_, params) ->
       List.map vars_in_expr params |> List.fold Set.union Set.empty
 

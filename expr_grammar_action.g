@@ -17,6 +17,7 @@ non-terminals FUN_OR_VAR
 non-terminals TYPE CHAR ASSIGNMENT FUNDEF_DECL
 non-terminals TYPEPTR
 non-terminals STRUCT_BODY STRUCTDEF_DECL STRUCTDEF FUN_OR_STRUCT_DEFS FUN_OR_STRUCT_DEF STRUCT ASSIGN_OR_IGNORE STRUCT_TABLE
+non-terminals FUNDEF_OR_GLOBAL
 
 axiom S
 {
@@ -31,7 +32,7 @@ axiom S
 /* adwda */
 
 rules
-S           -> FUN_OR_STRUCT_DEFS SYM_EOF                    { Node (Tlistglobdef, $1) }
+S           -> FUN_OR_STRUCT_DEFS SYM_EOF         { Node (Tlistglobdef, $1) }
 
 IDENTIFIER  -> SYM_IDENTIFIER                     { StringLeaf $1 }
 
@@ -49,8 +50,8 @@ TYPEPTR ->                                        { identity }
 
 FUNCALL     -> SYM_LPARENTHESIS CALL_PARAMS SYM_RPARENTHESIS { fun identifier -> Node(Tcall, [identifier; Node(Targs, $2)])}
 
-CALL_PARAMS -> EXPR CALL_REST_PARAMS              { $1::$2 }
-CALL_PARAMS ->                                    { [] }
+CALL_PARAMS -> EXPR CALL_REST_PARAMS                { $1::$2 }
+CALL_PARAMS ->                                      { [] }
 
 CALL_REST_PARAMS -> SYM_COMMA EXPR CALL_REST_PARAMS { $2::$3 }
 CALL_REST_PARAMS ->                                 { [] }
@@ -58,18 +59,21 @@ CALL_REST_PARAMS ->                                 { [] }
 FUN_OR_STRUCT_DEFS -> TYPE FUN_OR_STRUCT_DEF FUN_OR_STRUCT_DEFS { ($2 $1)::$3 }
 FUN_OR_STRUCT_DEFS ->                                           { [] }
 
-FUN_OR_STRUCT_DEF -> FUNDEF     { $1 }
-FUN_OR_STRUCT_DEF -> STRUCTDEF  { $1 }
+FUN_OR_STRUCT_DEF -> IDENTIFIER FUNDEF_OR_GLOBAL    { $2 $1 }
+FUN_OR_STRUCT_DEF -> STRUCTDEF                      { $1 }
 
-FUNDEF      -> IDENTIFIER SYM_LPARENTHESIS LPARAMS SYM_RPARENTHESIS FUNDEF_DECL { fun t -> Node (Tfundef, t :: Node (Tfunname, [$1]) :: Node (Tfunargs, $3) :: $5) }
+FUNDEF_OR_GLOBAL -> FUNDEF                          { $1 }
+FUNDEF_OR_GLOBAL -> ASSIGNMENT SYM_SEMICOLON        { $1 }
 
-FUNDEF_DECL -> INSTR                                  { [Node (Tfunbody, [$1])] }
-FUNDEF_DECL -> SYM_SEMICOLON                          { [] }
+FUNDEF      -> SYM_LPARENTHESIS LPARAMS SYM_RPARENTHESIS FUNDEF_DECL { fun id t -> Node (Tfundef, t :: Node (Tfunname, [id]) :: Node (Tfunargs, $2) :: $4) }
+
+FUNDEF_DECL -> INSTR                                { [Node (Tfunbody, [$1])] }
+FUNDEF_DECL -> SYM_SEMICOLON                        { [] }
 
 STRUCTDEF ->  STRUCTDEF_DECL SYM_SEMICOLON          { fun t -> Node(Tstructdef, [t; Node(Tstructbody, $1)])}
 
-STRUCTDEF_DECL -> SYM_LBRACE STRUCT_BODY SYM_RBRACE {$2}
-STRUCTDEF_DECL ->                                   {[]}
+STRUCTDEF_DECL -> SYM_LBRACE STRUCT_BODY SYM_RBRACE { $2 }
+STRUCTDEF_DECL ->                                   { [] }
 
 STRUCT_BODY -> TYPE IDENTIFIER STRUCT_TABLE SYM_SEMICOLON STRUCT_BODY  {($3 $1 $2)::$5}
 /* STRUCT_BODY -> STRUCTDEF STRUCT_BODY */
@@ -89,15 +93,15 @@ INSTR       -> SYM_WHILE SYM_LPARENTHESIS EXPR SYM_RPARENTHESIS INSTR   { Node (
 INSTR       -> SYM_RETURN EXPR SYM_SEMICOLON                            { Node (Treturn, [$2]) }
 INSTR       -> SYM_PRINT EXPR SYM_SEMICOLON                             { Node (Tprint, [$2]) }
 INSTR       -> BLOC                                                     { $1 }
-INSTR       -> TYPE IDENTIFIER ASSIGNMENT SYM_SEMICOLON                 { $3 $1 $2 }
+INSTR       -> TYPE IDENTIFIER ASSIGNMENT SYM_SEMICOLON                 { $3 $2 $1 }
 INSTR       -> EXPR ASSIGN_OR_IGNORE SYM_SEMICOLON                      { $2 $1 }
 
 ASSIGN_OR_IGNORE -> SYM_ASSIGN EXPR               { fun e -> Node (Tassign, [e; $2]) }
 ASSIGN_OR_IGNORE ->                               { identity }
 
-ASSIGNMENT  -> SYM_ASSIGN EXPR                        { fun t i -> Node (Tdeclare, [t; i; $2]) }
-ASSIGNMENT  -> SYM_LBRACKET SYM_INTEGER SYM_RBRACKET  { fun t i -> Node (Tdeclare, [TypeLeaf (Ttab (type_of_leaf t, $2)); i;]) }
-ASSIGNMENT  ->                                        { fun t i -> Node (Tdeclare, [t; i]) }
+ASSIGNMENT  -> SYM_ASSIGN EXPR                        { fun i t -> Node (Tdeclare, [t; i; $2]) }
+ASSIGNMENT  -> SYM_LBRACKET SYM_INTEGER SYM_RBRACKET  { fun i t -> Node (Tdeclare, [TypeLeaf (Ttab (type_of_leaf t, $2)); i;]) }
+ASSIGNMENT  ->                                        { fun i t -> Node (Tdeclare, [t; i]) }
 
 FUN_OR_VAR  -> FUNCALL                            { $1 }
 FUN_OR_VAR  ->                                    { identity }

@@ -11,7 +11,10 @@ let rec dump_cfgexpr : expr -> string = function
   | Eunop (u, e) -> Format.sprintf "(%s %s)" (dump_unop u) (dump_cfgexpr e)
   | Eint i -> Format.sprintf "%d" i
   | Evar s -> Format.sprintf "%s" s
-  | Ecall (fname, params) -> Format.sprintf "%s()" fname
+  | Eglobvar s -> Format.sprintf "g_%s" s
+  | Ecall (fname, params) ->
+      params |> List.map dump_cfgexpr |> String.concat ", "
+      |> Format.sprintf "%s(%s)" fname
   | Eload (e, sz) -> Format.sprintf "load(%s, %d)" (dump_cfgexpr e) sz
   | Estk i -> Format.sprintf "addr%d" i
 

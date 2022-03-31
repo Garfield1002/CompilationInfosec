@@ -44,8 +44,8 @@ let rec iter_dead_assign_elimination_fun f =
   let f, c = dead_assign_elimination_fun f in
   if c then iter_dead_assign_elimination_fun f else f
 
-let dead_assign_elimination_gdef = function
-  | Gfun f -> Gfun (iter_dead_assign_elimination_fun f)
+let dead_assign_elimination_gdef gd =
+  match gd with Gfun f -> Gfun (iter_dead_assign_elimination_fun f) | _ -> gd
 
 let dead_assign_elimination p =
   if !Options.no_cfg_dae then p else assoc_map dead_assign_elimination_gdef p

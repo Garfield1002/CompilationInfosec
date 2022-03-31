@@ -36,10 +36,11 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
      erreur si besoin. *)
   let size_of_type_param = size_of_type typ_struct in
   let rec eval_eexpr st funvarinmem (typ_var : (string, typ) Hashtbl.t)
-      (typ_fun : (string, typ list * typ) Hashtbl.t) (sp : int)
-      (sp_offset : int) (e : expr) : (int * typ) res =
+      (typ_fun : (string, typ list * typ) Hashtbl.t)
+      (typ_glob : (string, typ) Hashtbl.t) (sp : int) (sp_offset : int)
+      (e : expr) : (int * typ) res =
     let eval_eexpr_params =
-      eval_eexpr st funvarinmem typ_var typ_fun sp sp_offset
+      eval_eexpr st funvarinmem typ_var typ_fun typ_glob sp sp_offset
     in
     match e with
     | Ebinop (binop, (a, _), (b, _)) -> (
@@ -54,6 +55,14 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
         | _ -> OK (eval_binop binop a b, t1))
     | Eunop (unop, a) ->
         eval_eexpr_params a >>= fun (a, t) -> OK (eval_unop unop a, t)
+    | Eaddr (Eglobvar v) -> (
+        let opt =
+          (Hashtbl.find_option typ_glob v, Hashtbl.find_option st.glob_env v)
+        in
+        match opt with
+        | Some (Ttab (p, _)), Some addr -> OK (addr, Tptr p)
+        | Some t, Some addr -> OK (addr, t)
+        | _ -> Error (Printf.sprintf "\'%s\' undeclared" v))
     | Eaddr (Evar v) -> (
         let opt = Hashtbl.find_option funvarinmem v in
         let t = Hashtbl.find_option typ_var v in
@@ -63,15 +72,29 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
         | Some offset, Some t ->
             (* Format.fprintf oc "Address of %s is %d \n" v (sp + offset); *)
             OK (sp + offset, Tptr t))
+    | Eaddr (Eload (e, _)) -> eval_eexpr_params e >>= fun (e, t) -> OK (e, t)
     | Eaddr _ -> Error "Not implemented"
     | Eload (e, _) -> (
         eval_eexpr_params e >>= fun (i, t) ->
         match t with
-        (* | Ttab (p, _) *)
-        | Tptr p ->
-            Mem.read_bytes_as_int st.mem i (size_of_type_param p) >>= fun r ->
-            (* Format.fprintf oc "Read %d at address %d \n" r i; *)
-            OK (r, p)
+        | Tptr p -> (
+            match p with
+            | Ttab (p, _) ->
+                Mem.read_bytes_as_int st.mem i (size_of_type_param p)
+                >>= fun r ->
+                (* Format.fprintf oc "Read %d at address %d \n" r i; *)
+                OK (r, p)
+            | Tstruct sname ->
+                let _, p = Hashtbl.find typ_struct sname |> List.hd in
+                Mem.read_bytes_as_int st.mem i (size_of_type_param p)
+                >>= fun r ->
+                (* Format.fprintf oc "Read %d at address %d \n" r i; *)
+                OK (r, p)
+            | _ ->
+                Mem.read_bytes_as_int st.mem i (size_of_type_param p)
+                >>= fun r ->
+                (* Format.fprintf oc "Read %d at address %d \n" r i; *)
+                OK (r, p))
         | _ ->
             Printf.sprintf "Invalid type argument of unary \'*\' (have \'%s\')"
               (string_of_typ t)
@@ -79,7 +102,7 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
     | Egetfield (e, f, _) -> (
         eval_eexpr_params e >>= fun (i, t) ->
         match t with
-        | Tptr (Tstruct sname) -> (
+        | Tstruct sname | Tptr (Tstruct sname) -> (
             field_type typ_struct sname f >>= fun t ->
             field_offset typ_struct sname f >>= fun off ->
             match t with
@@ -95,8 +118,8 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
             Error
               (Printf.sprintf
                  "Request for member \'%s\' in something not a structure or \
-                  union"
-                 f))
+                  union aka \'%s\'"
+                 f (string_of_typ t)))
     | Eint i -> OK (i, Tint)
     | Echar c -> OK (int_of_char c, Tchar)
     | Evar s -> (
@@ -111,6 +134,15 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
             if Option.is_none v || Option.is_none t then
               Error (Printf.sprintf "\'%s\' undeclared" s)
             else OK (Option.get v, Option.get t))
+    | Eglobvar v -> (
+        let opt =
+          (Hashtbl.find_option typ_glob v, Hashtbl.find_option st.glob_env v)
+        in
+        match opt with
+        | Some t, Some addr ->
+            Mem.read_bytes_as_int st.mem addr (size_of_type_param t)
+            >>= fun i -> OK (i, t)
+        | _ -> Error (Printf.sprintf "\'%s\' undeclared" v))
     | Ecall (fname, params) when is_builtin fname ->
         Utils.list_map_res eval_eexpr_params params >>= fun params ->
         let params = List.map fst params in
@@ -126,7 +158,8 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
         (let opt = Hashtbl.find_option typ_fun fname in
          match opt with Some (_, t) -> OK t | None -> Error "No type")
         >>= fun t ->
-        eval_efun oc st sp_offset typ_fun f fname params >>= fun (v, st) ->
+        eval_efun oc st sp_offset typ_fun typ_glob f fname params
+        >>= fun (v, st) ->
         match v with None -> Error "No output" | Some ret -> OK (ret, t))
   (* [eval_einstr oc st ins] évalue l'instrution [ins] en partant de l'état [st].
 
@@ -142,13 +175,14 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
      - [st'] est l'état mis à jour. *)
   and eval_einstr oc (st : int state) funvarinmem fname
       (typ_var : (string, typ) Hashtbl.t)
-      (typ_fun : (string, typ list * typ) Hashtbl.t) (sp : int)
-      (sp_offset : int) (ins : instr) : (int option * int state) res =
+      (typ_fun : (string, typ list * typ) Hashtbl.t)
+      (typ_glob : (string, typ) Hashtbl.t) (sp : int) (sp_offset : int)
+      (ins : instr) : (int option * int state) res =
     let eval_einstr_params =
-      eval_einstr oc st funvarinmem fname typ_var typ_fun sp sp_offset
+      eval_einstr oc st funvarinmem fname typ_var typ_fun typ_glob sp sp_offset
     in
     let eval_eexpr_params =
-      eval_eexpr st funvarinmem typ_var typ_fun sp sp_offset
+      eval_eexpr st funvarinmem typ_var typ_fun typ_glob sp sp_offset
     in
     match ins with
     | Istore (addr, v, _) ->
@@ -162,6 +196,7 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
             |> fun x -> Error x)
         >>= fun p ->
         eval_eexpr_params v >>= fun (v, _) ->
+        (* Format.fprintf oc "Stored %d at address %d \n" v addr; *)
         let v = split_bytes (size_of_type_param p) v in
         Mem.write_bytes st.mem addr v >>= fun () -> OK (None, st)
     | Iassign (s, e) -> (
@@ -195,7 +230,7 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
         eval_eexpr_params e >>= fun (i, t) ->
         eval_eexpr_params v >>= fun (e, _) ->
         match t with
-        | Tptr (Tstruct sname) ->
+        | Tstruct sname | Tptr (Tstruct sname) ->
             field_type typ_struct sname f >>= fun t ->
             field_offset typ_struct sname f >>= fun offset ->
             Mem.write_bytes st.mem (i + offset)
@@ -207,8 +242,8 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
             Error
               (Printf.sprintf
                  "Request for member \'%s\' in something not a structure or \
-                  union"
-                 f))
+                  union aka \'%s\'"
+                 f (string_of_typ t)))
     | Iblock (h :: t) ->
         eval_einstr_params h >>= fun (ret, s) ->
         if Option.is_none ret then eval_einstr_params (Iblock t) else OK (ret, s)
@@ -220,8 +255,8 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
         Utils.list_map_res eval_eexpr_params params >>= fun params ->
         let params = List.map fst params in
         find_function ep fname >>= fun f ->
-        eval_efun oc st sp_offset typ_fun f fname params >>= fun (_, st) ->
-        OK (None, st)
+        eval_efun oc st sp_offset typ_fun typ_glob f fname params
+        >>= fun (_, st) -> OK (None, st)
   (* [eval_efun oc st f fname vargs] évalue la fonction [f] (dont le nom est
      [fname]) en partant de l'état [st], avec les arguments [vargs].
 
@@ -229,6 +264,7 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
      pour [eval_einstr]. *)
   and eval_efun oc (st : int state) (sp : int)
       (typ_fun : (string, typ list * typ) Hashtbl.t)
+      (typ_glob : (string, typ) Hashtbl.t)
       ({
          funargs;
          funrettype;
@@ -253,8 +289,8 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
     with
     | () -> (
         match
-          eval_einstr oc { st with env } funvarinmem fname funvartyp typ_fun sp
-            (sp + funstksz) funbody
+          eval_einstr oc { st with env } funvarinmem fname funvartyp typ_fun
+            typ_glob sp (sp + funstksz) funbody
         with
         | OK (v, st') -> OK (v, { st' with env = env_save })
         | Error e ->
@@ -283,18 +319,23 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
   *)
   let st = init_state memsize in
   let typ_fun = Hashtbl.create (List.length ep + 3) in
+  let typ_glob = Hashtbl.create (List.length ep) in
   Hashtbl.replace typ_fun "print" ([ Tint ], Tvoid);
   Hashtbl.replace typ_fun "print_int" ([ Tint ], Tvoid);
   Hashtbl.replace typ_fun "print_char" ([ Tchar ], Tvoid);
 
   List.iter
-    (fun (fname, _) ->
-      let res = find_function ep fname in
-      match res with
-      | OK { funargs; funrettype } ->
-          Hashtbl.replace typ_fun fname (List.map snd funargs, funrettype)
-      | _ -> ())
+    (fun (fname, globalDef) ->
+      match globalDef with
+      | Gfun _ -> (
+          let res = find_function ep fname in
+          match res with
+          | OK { funargs; funrettype } ->
+              Hashtbl.replace typ_fun fname (List.map snd funargs, funrettype)
+          | _ -> ())
+      | Gvar (t, _) -> Hashtbl.replace typ_glob fname t)
     ep;
+  init_glob st.mem st.glob_env ep 0x1000 >>= fun _ ->
   find_function ep "main" >>= fun f ->
   (* ne garde que le nombre nécessaire de paramètres pour la fonction "main". *)
   let n = List.length f.funargs in
@@ -304,7 +345,7 @@ let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
       (uncurry (Hashtbl.replace st.env))
       (combine (List.map fst f.funargs) params)
   in
-  eval_efun oc st 0 typ_fun f "main" params >>= fun (v, st) -> OK v
+  eval_efun oc st 0 typ_fun typ_glob f "main" params >>= fun (v, st) -> OK v
 
 (* (match Hashtbl.find_option typ_fun fname with
    | None ->

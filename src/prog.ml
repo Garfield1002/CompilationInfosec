@@ -1,6 +1,8 @@
 open Batteries
 open Utils
 
+let global_start_address = 0x1000
+
 type mem_access_size = MAS1 | MAS4 | MAS8
 
 let string_of_mem_access_size mas =
@@ -16,28 +18,6 @@ let mas_of_size n =
 let size_of_mas mas = match mas with MAS1 -> 1 | MAS4 -> 4 | MAS8 -> 8
 let archi_mas () = match !Archi.archi with A64 -> MAS8 | A32 -> MAS4
 
-type 'a gdef = Gfun of 'a
-type 'a prog = (string * 'a gdef) list
-
-let dump_gdef dump_fun oc gd =
-  match gd with
-  | fname, Gfun f ->
-      dump_fun oc fname f;
-      Format.fprintf oc "\n"
-
-let dump_prog dump_fun oc = List.iter (dump_gdef dump_fun oc)
-
-type 'a state = { env : (string, 'a) Hashtbl.t; mem : Mem.t }
-
-let init_state memsize = { mem = Mem.init memsize; env = Hashtbl.create 17 }
-let set_val env v i = Hashtbl.replace env v i
-let get_val env v = Hashtbl.find_option env v
-
-let find_function (ep : 'a prog) fname : 'a res =
-  match List.assoc_opt fname ep with
-  | Some (Gfun f) -> OK f
-  | _ -> Error (Format.sprintf "Unknown function %s\n" fname)
-
 type typ =
   | Tint
   | Tchar
@@ -45,15 +25,6 @@ type typ =
   | Tptr of typ
   | Tstruct of string
   | Ttab of typ * int
-
-let rec string_of_typ t =
-  match t with
-  | Tint -> "int"
-  | Tchar -> "char"
-  | Tvoid -> "void"
-  | Tstruct s -> Printf.sprintf "struct %s" s
-  | Tptr t -> t |> string_of_typ |> Printf.sprintf "%s*"
-  | Ttab (t, l) -> Printf.sprintf "%s[%d]" (string_of_typ t) l
 
 let rec typCompat t1 t2 =
   match (t1, t2) with
@@ -77,6 +48,83 @@ let rec size_of_type (structs : (string, (string * typ) list) Hashtbl.t)
       | Some l ->
           List.fold_left (fun acc (_, t) -> size_of_type structs t + acc) 0 l
       | None -> failwith "Undefinned structure")
+
+let rec size_of_type_simple (t : typ) : int =
+  match t with
+  | Tchar | Tvoid -> 1
+  | Tint | Tptr _ -> size_of_mas (archi_mas ())
+  | Ttab (t, l) -> size_of_type_simple t * l
+  | _ -> failwith "Unknown size"
+
+let rec string_of_typ t =
+  match t with
+  | Tint -> "int"
+  | Tchar -> "char"
+  | Tvoid -> "void"
+  | Tstruct s -> Printf.sprintf "struct %s" s
+  | Tptr t -> t |> string_of_typ |> Printf.sprintf "%s*"
+  | Ttab (t, l) -> Printf.sprintf "%s[%d]" (string_of_typ t) l
+
+type init_data = Iint of int | Ichar of char | Ispace of int
+
+let string_of_init i =
+  match i with
+  | Iint e -> Printf.sprintf "%d" e
+  | Ichar c -> Printf.sprintf "\'%c\'" c
+  | Ispace e -> Printf.sprintf "space(%d)" e
+
+type 'a gdef = Gfun of 'a | Gvar of typ * init_data
+type 'a prog = (string * 'a gdef) list
+
+let dump_gdef dump_fun oc gd =
+  match gd with
+  | fname, Gfun f ->
+      dump_fun oc fname f;
+      Format.fprintf oc "\n"
+  | varname, Gvar (t, init) ->
+      Format.fprintf oc "// %s g_%s = %s;\n" (string_of_typ t) varname
+        (string_of_init init)
+
+let dump_prog dump_fun oc = List.iter (dump_gdef dump_fun oc)
+
+type 'a state = {
+  env : (string, 'a) Hashtbl.t;
+  mem : Mem.t;
+  glob_env : (string, 'a) Hashtbl.t;
+}
+
+let init_state memsize =
+  {
+    mem = Mem.init memsize;
+    env = Hashtbl.create 17;
+    glob_env = Hashtbl.create 17;
+  }
+
+let rec init_glob (mem : Mem.t) (glob_env : (string, int) Hashtbl.t)
+    (p : 'a prog) (startglob : int) : int res =
+  match p with
+  | [] -> OK startglob
+  | (_, Gfun _) :: t -> init_glob mem glob_env t startglob
+  | (varname, Gvar (_, Ichar c)) :: p ->
+      Hashtbl.replace glob_env varname startglob;
+      Mem.write_bytes mem startglob (split_bytes 1 (int_of_char c))
+      >>= fun () -> init_glob mem glob_env p (startglob + 1)
+  | (varname, Gvar (_, Iint i)) :: p ->
+      Hashtbl.replace glob_env varname startglob;
+      Mem.write_bytes mem startglob (split_bytes (size_of_mas (archi_mas ())) i)
+      >>= fun () ->
+      init_glob mem glob_env p (startglob + size_of_mas (archi_mas ()))
+  | (varname, Gvar (_, Ispace s)) :: p ->
+      Hashtbl.replace glob_env varname startglob;
+      init_glob mem glob_env p (startglob + s)
+
+let set_val env v i = Hashtbl.replace env v i
+let get_val env v = Hashtbl.find_option env v
+
+let find_function (ep : 'a prog) fname : 'a res =
+  match List.assoc_opt fname ep with
+  | Some (Gfun f) -> OK f
+  | _ -> Error (Format.sprintf "Unknown function %s\n" fname)
 
 let rec field_offset (structs : (string, (string * typ) list) Hashtbl.t)
     (s : string) (f : string) : int res =

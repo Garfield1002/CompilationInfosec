@@ -2,7 +2,7 @@
 # 'make DIR=basic/mul*.e' launches all the files starting with mul in the basic directory
 # otherwise, use basic/*.e as a default
 # FILES := $(if $(DIR),$(DIR),basic/*.e funcall/*.e type_basic/*.e type_funcall/*.e char/*.e)
-FILES := $(if $(DIR),$(DIR),type_basic/*.e type_funcall/*.e char/*.e ptr/*.e structs/*.e array/*.e)
+FILES := $(if $(DIR),$(DIR),type_basic/*.e type_funcall/*.e char/*.e ptr/*.e structs/*.e array/*.e globals/*.e)
 
 OPTS := $(if $(OPTS), $(OPTS), -clever-regalloc)
 

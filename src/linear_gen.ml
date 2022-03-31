@@ -73,7 +73,11 @@ let linear_of_rtl_fun
     linearfunstksz = rtlfunstksz;
   }
 
-let linear_of_rtl_gdef = function Gfun f -> Gfun (linear_of_rtl_fun f)
+let linear_of_rtl_gdef gd =
+  match gd with
+  | Gfun f -> Gfun (linear_of_rtl_fun f)
+  | Gvar (t, i) -> Gvar (t, i)
+
 let linear_of_rtl r = assoc_map linear_of_rtl_gdef r
 
 let pass_linearize rtl =

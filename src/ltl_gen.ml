@@ -228,6 +228,7 @@ let pass_parameters rargs allocation arg_saved =
 
 let written_rtl_regs_instr (i : rtl_instr) =
   match i with
+  | Rglobvar (rd, _)
   | Rbinop (_, rd, _, _)
   | Runop (_, rd, _)
   | Rconst (rd, _)
@@ -247,7 +248,7 @@ let read_rtl_regs_instr (i : rtl_instr) =
       Set.of_list [ rs1; rs2 ]
   | Rload (_, rs, _) | Rprint rs | Runop (_, _, rs) | Rmov (_, rs) | Rret rs ->
       Set.singleton rs
-  | Rlabel _ | Rconst _ | Rjmp _ | Rstk _ -> Set.empty
+  | Rlabel _ | Rconst _ | Rjmp _ | Rstk _ | Rglobvar _ -> Set.empty
   | Rcall (_, _, params) -> Set.of_list params
 
 let read_rtl_regs (l : rtl_instr list) =
@@ -310,6 +311,9 @@ let ltl_instrs_of_linear_instr fname live_out allocation numspilled
     | Rconst (rd, i) ->
         store_loc reg_tmp1 allocation rd >>= fun (ld, rd) ->
         OK (LConst (rd, i) :: ld)
+    | Rglobvar (rd, v) ->
+        store_loc reg_tmp1 allocation rd >>= fun (ld, rd) ->
+        OK (LGlobvar (rd, v) :: ld)
     | Rstk (rd, addr) ->
         store_loc reg_tmp1 allocation rd >>= fun (ld, rd) ->
         OK (LAddi (rd, reg_sp, addr) :: ld)
@@ -514,7 +518,8 @@ let ltl_prog_of_linear lp =
               | Some x -> x
             in
             ltl_fun_of_linear_fun lp f fname f_lives f_alloc >>= fun f ->
-            OK (fname, Gfun f))
+            OK (fname, Gfun f)
+        | varname, Gvar (t, i) -> OK (varname, Gvar (t, i)))
       lp
   in
   prog

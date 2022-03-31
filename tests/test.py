@@ -197,9 +197,18 @@ class CommandExecutor(Thread):
                 compstep_td = ""
                 err = r['error']
                 if err != None:
+                    expect_file_name = self.f + ".expect_" + "_".join(args.args)
+                    cls = "bad"
+                    try:
+                        with open(expect_file_name, 'r') as expectfile:
+                            j = json.load(expectfile)
+                            if(j['error'] == True):
+                                cls = "good"
+                    except:
+                        pass
                     compstep_td="""
-                    <td class="bad" style="text-align: left;" colspan="{}">{} error:<br><pre>{}</pre></td>
-                    """.format( numcols - curcol, r['compstep'],err)
+                    <td class="{}" style="text-align: left;" colspan="{}">{} error:<br><pre>{}</pre></td>
+                    """.format( cls, numcols - curcol, r['compstep'],err)
                     self.s += compstep_td
                     break
 
