@@ -61,8 +61,12 @@ let print_binop (b : binop) =
   | Elang.Ecge -> "cge"
   | Elang.Eceq -> "ceq"
   | Elang.Ecne -> "cne"
+  | Elang.Eand -> "and"
+  | Elang.Eor -> "or"
+  | Elang.Eband -> "and"
 
-let print_unop (u : unop) = match u with Elang.Eneg -> "neg"
+let print_unop (u : unop) =
+  match u with Elang.Eneg -> "neg" | Elang.Enot -> "not"
 
 let dump_ltl_instr oc (i : ltl_instr) =
   match i with

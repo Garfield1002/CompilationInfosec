@@ -63,6 +63,11 @@ type tag =
   | Tstructdef
   | Tstructbody
   | Tarray
+  | Tnot
+  | Tand
+  | Tor
+  | Tband
+  | Tarrow
 
 type tree =
   | Node of tag * tree list
@@ -120,6 +125,11 @@ let string_of_tag = function
   | Tstructdef -> "Tstructdef"
   | Tstructbody -> "Tstructbody"
   | Tarray -> "Tarray"
+  | Tnot -> "Tnot"
+  | Tand -> "Tand"
+  | Tor -> "Tor"
+  | Tband -> "Tband"
+  | Tarrow -> "Tarrow"
 
 let type_of_leaf l =
   match l with TypeLeaf t -> t | _ -> failwith "type_of_leaf: unexpected AST"

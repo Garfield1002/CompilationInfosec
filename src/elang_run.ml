@@ -9,6 +9,7 @@ open Int
 open Elang_gen
 
 let binop_bool_to_int f x y = if f x y then 1 else 0
+let binop_bbool_to_int f x y = if f (x <> 0) (y <> 0) then 1 else 0
 
 (* [eval_binop b x y] évalue l'opération binaire [b] sur les arguments [x]
    et [y]. *)
@@ -26,9 +27,15 @@ let eval_binop (b : binop) : int -> int -> int =
   | Ecge -> binop_bool_to_int ( >= )
   | Eceq -> binop_bool_to_int ( = )
   | Ecne -> binop_bool_to_int ( <> )
+  | Eand -> binop_bbool_to_int ( && )
+  | Eor -> binop_bbool_to_int ( || )
+  | Eband -> ( land )
 
 (* [eval_unop u x] évalue l'opération unaire [u] sur l'argument [x]. *)
-let eval_unop (u : unop) : int -> int = match u with Eneg -> Int.neg
+let eval_unop (u : unop) : int -> int =
+  match u with
+  | Eneg -> Int.neg
+  | Enot -> fun x -> if not (x <> 0) then 1 else 0
 
 let eval_eprog oc ((ep, typ_struct) : eprog) (memsize : int) (params : int list)
     : int option res =

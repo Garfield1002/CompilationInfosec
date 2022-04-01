@@ -1,5 +1,3 @@
-#include <stdio.h>
-
 struct s
 {
     int x;
@@ -8,7 +6,7 @@ struct s
 
 void setX(struct s *p, int x)
 {
-    p->x = x;
+    p->x = p->y + x;
 }
 
 int main()

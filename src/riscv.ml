@@ -45,9 +45,13 @@ let print_binop (b : binop) =
   | Elang.Exor -> "xor"
   | Elang.Ediv -> "divu"
   | Elang.Esub -> "sub"
+  | Elang.Eand -> "and"
+  | Elang.Eor -> "or"
+  | Elang.Eband -> "and"
   | _ -> failwith "Unexpected binop"
 
-let print_unop (u : unop) = match u with Elang.Eneg -> "neg"
+let print_unop (u : unop) =
+  match u with Elang.Eneg -> "neg" | Elang.Enot -> "seqz"
 
 let instrsuffix_of_size sz =
   match sz with MAS1 -> 'b' | MAS4 -> 'w' | MAS8 -> 'd'

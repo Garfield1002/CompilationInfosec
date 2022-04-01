@@ -90,6 +90,7 @@ let list_regexp : (regexp * (string -> token option)) list =
     (keyword_regexp "-", fun s -> Some SYM_MINUS);
     (keyword_regexp "*", fun s -> Some SYM_ASTERISK);
     (keyword_regexp "&", fun s -> Some SYM_AMPERSAND);
+    (keyword_regexp "->", fun s -> Some SYM_ARROW);
     (keyword_regexp "/", fun s -> Some SYM_DIV);
     (keyword_regexp "%", fun s -> Some SYM_MOD);
     (keyword_regexp "{", fun s -> Some SYM_LBRACE);
@@ -100,6 +101,9 @@ let list_regexp : (regexp * (string -> token option)) list =
     (keyword_regexp ")", fun s -> Some SYM_RPARENTHESIS);
     (keyword_regexp ";", fun s -> Some SYM_SEMICOLON);
     (keyword_regexp ",", fun s -> Some SYM_COMMA);
+    (keyword_regexp "||", fun s -> Some SYM_BOOL_OR);
+    (keyword_regexp "&&", fun s -> Some SYM_BOOL_AND);
+    (keyword_regexp "!", fun s -> Some SYM_BOOL_NOT);
     (keyword_regexp "=", fun s -> Some SYM_ASSIGN);
     (keyword_regexp "==", fun s -> Some SYM_EQUALITY);
     (keyword_regexp "!=", fun s -> Some SYM_NOTEQ);

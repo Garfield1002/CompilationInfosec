@@ -16,9 +16,12 @@ type binop =
   | Ecge
   | Eceq
   | Ecne
+  | Eand
+  | Eor
+  | Eband
 (* comparisons *)
 
-type unop = Eneg
+type unop = Eneg | Enot
 
 type expr =
   | Ebinop of binop * (expr * typ) * (expr * typ)

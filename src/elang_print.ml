@@ -16,8 +16,14 @@ let dump_binop = function
   | Ecge -> Printf.sprintf ">="
   | Eceq -> Printf.sprintf "=="
   | Ecne -> Printf.sprintf "!="
+  | Eand -> Printf.sprintf "&&"
+  | Eor -> Printf.sprintf "||"
+  | Eband -> Printf.sprintf "&"
 
-let dump_unop = function Eneg -> Printf.sprintf "-"
+let dump_unop = function
+  | Eneg -> Printf.sprintf "-"
+  | Enot -> Printf.sprintf "!"
+
 let safeTL l = match l with [] -> [] | _ :: t -> t
 
 let rec dump_eexpr = function

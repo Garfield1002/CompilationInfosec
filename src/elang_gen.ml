@@ -8,18 +8,9 @@ open Elang_print
 open Utils
 
 let tag_is_binop = function
-  | Tadd -> true
-  | Tsub -> true
-  | Tmul -> true
-  | Tdiv -> true
-  | Tmod -> true
-  | Txor -> true
-  | Tcle -> true
-  | Tclt -> true
-  | Tcge -> true
-  | Tcgt -> true
-  | Tceq -> true
-  | Tcne -> true
+  | Tadd | Tsub | Tmul | Tdiv | Tmod | Txor | Tcle | Tclt | Tcge | Tcgt | Tceq
+  | Tcne | Tand | Tor | Tband ->
+      true
   | _ -> false
 
 let string_of_binary = function
@@ -35,6 +26,9 @@ let string_of_binary = function
   | Tcgt -> ">"
   | Tceq -> "=="
   | Tcne -> "!="
+  | Tand -> "&&"
+  | Tor -> "||"
+  | Tband -> "&"
   | _ -> ""
 
 let binop_of_tag = function
@@ -50,6 +44,9 @@ let binop_of_tag = function
   | Tcgt -> Ecgt
   | Tceq -> Eceq
   | Tcne -> Ecne
+  | Tand -> Eand
+  | Tor -> Eor
+  | Tband -> Eband
   | _ -> assert false
 
 let type_of_leaf typ_struct leaf =
@@ -150,6 +147,13 @@ let rec make_eexpr_of_ast (typ_var : (string, typ) Hashtbl.t)
           Error
             (Printf.sprintf "Wrong type argument to unary minus (have \'%s\')"
                (string_of_typ t))
+    | Node (Tnot, [ e ]) ->
+        make_eexpr_of_ast_params e >>= fun (e, t) ->
+        if isArithmetic t then OK (Eunop (Enot, e), t)
+        else
+          Error
+            (Printf.sprintf "Wrong type argument to unary not (have \'%s\')"
+               (string_of_typ t))
     | Node (Taddrof, [ Node (Tindirection, [ e ]) ]) ->
         (* special case: & and * cancel each other, neither one is evaluated (since C99) https://en.cppreference.com/w/c/language/operator_member_access#Address_of *)
         make_eexpr_of_ast_params e
@@ -174,8 +178,8 @@ let rec make_eexpr_of_ast (typ_var : (string, typ) Hashtbl.t)
         | _ -> ());
         match (e, t) with
         | Eload (a, t'), _ -> OK (a, Tptr t)
-        | _, Ttab _ -> OK (e, Tptr t)
-        | _, Tstruct _ -> OK (e, Tptr t)
+        (* | _, Ttab _ -> OK (e, Tptr t)
+           | _, Tstruct _ -> OK (e, Tptr t) *)
         | _ -> OK (Eaddr e, Tptr t))
     | Node (Tstruct, [ e; StringLeaf f ]) -> (
         make_eexpr_of_ast_params e >>= fun (e, t) ->
@@ -185,6 +189,16 @@ let rec make_eexpr_of_ast (typ_var : (string, typ) Hashtbl.t)
         match e with
         | Evar _ -> OK (Egetfield (Eaddr e, f, sname), t)
         | _ -> OK (Egetfield (Eaddr e, f, sname), t))
+    | Node (Tarrow, [ e; StringLeaf f ]) -> (
+        make_eexpr_of_ast_params e >>= fun (e, t) ->
+        (match t with
+        | Tptr (Tstruct sname) -> OK sname
+        | _ -> Error "Incorrect type")
+        >>= fun sname ->
+        field_type typ_struct sname f >>= fun t ->
+        match e with
+        | Evar _ -> OK (Egetfield (e, f, sname), t)
+        | _ -> OK (Egetfield (e, f, sname), t))
     | Node (Tint, [ IntLeaf i ]) -> OK (Eint i, Tint)
     | Node (Tchar, [ CharLeaf c ]) -> OK (Echar c, Tchar)
     | StringLeaf v -> (
@@ -346,6 +360,26 @@ let rec make_einstr_of_ast (typ_var : (string, typ) Hashtbl.t)
           match s with
           | Evar _ -> OK (Isetfield (Eaddr s, f, e, sname))
           | _ -> OK (Isetfield (Eaddr s, f, e, sname))
+        else
+          Error
+            (Printf.sprintf
+               "Incompatible types when assigning to type \'%s\' from type \
+                \'%s\'"
+               (string_of_typ et) (string_of_typ t))
+    | Node (Tassign, [ Node (Tarrow, [ s; StringLeaf f ]); e ]) ->
+        make_eexpr_of_ast_params s >>= fun (s, t) ->
+        (match t with
+        | Tptr (Tstruct sname) -> OK sname
+        | _ ->
+            Error
+              (Printf.sprintf
+                 "Request for member \'%s\' in something not a structure or \
+                  union"
+                 f))
+        >>= fun sname ->
+        field_type typ_struct sname f >>= fun et ->
+        make_eexpr_of_ast_params e >>= fun (e, t) ->
+        if typCompat t et then OK (Isetfield (s, f, e, sname))
         else
           Error
             (Printf.sprintf
